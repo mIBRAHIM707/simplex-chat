@@ -1,0 +1,274 @@
+===============================================================================
+SIMPLEX CHAT - DISAPPEARING MESSAGES TIMER LOGIC CHANGES
+===============================================================================
+
+Date: August 18, 2025
+Requested Changes:
+1. Change timer logic from read-time based to send-time based
+2. Change default TTL from disabled to 1 day (86400 seconds)
+
+===============================================================================
+CHANGE 1: DEFAULT TTL MODIFICATION
+===============================================================================
+
+File: src/Simplex/Chat/Types/Preferences.hs
+Line Number: ~374 (in defaultChatPrefs function)
+
+OLD CODE:
+defaultChatPrefs =
+  FullPreferences
+    { timedMessages = TimedMessagesPreference {allow = FAYes, ttl = Nothing},
+
+NEW CODE:
+defaultChatPrefs =
+  FullPreferences
+    { timedMessages = TimedMessagesPreference {allow = FAYes, ttl = Just 86400},
+
+RATIONALE:
+- Changed from ttl = Nothing (disabled) to ttl = Just 86400 (1 day)
+- 86400 seconds = 24 hours = 1 day
+- This makes disappearing messages enabled by default with 1-day expiration
+- Users can still override this setting per conversation
+
+===============================================================================
+CHANGE 2: TIMER LOGIC MODIFICATION (SEND-TIME BASED)
+===============================================================================
+
+File: src/Simplex/Chat/Library/Internal.hs  
+Line Number: ~166 (in sndCITimed_ function)
+
+OLD CODE:
+sndCITimed_ live chatTTL itemTTL =
+  forM (chatTTL >>= (itemTTL <|>)) $ \ttl ->
+    CITimed ttl
+      <$> if live
+        then pure Nothing
+        else Just . addUTCTime (realToFrac ttl) <$> liftIO getCurrentTime
+
+NEW CODE:
+sndCITimed_ live chatTTL itemTTL =
+  forM (chatTTL >>= (itemTTL <|>)) $ \ttl ->
+    CITimed ttl . Just . addUTCTime (realToFrac ttl)
+      <$> liftIO getCurrentTime
+
+RATIONALE:
+- PREVIOUS BEHAVIOR:
+  * Live messages: Timer started at READ time (deleteAt = Nothing initially)
+  * Non-live messages: Timer started at SEND time (deleteAt set immediately)
+
+- NEW BEHAVIOR:
+  * ALL messages: Timer starts at SEND time (deleteAt always set immediately)
+
+- TECHNICAL EXPLANATION:
+  * Removed the conditional logic based on 'live' parameter
+  * Now all messages get deleteAt timestamp set at creation time
+  * This ensures consistent behavior regardless of message type
+  * Messages will disappear based on when they were sent, not when they were read
+
+===============================================================================
+TECHNICAL DETAILS
+===============================================================================
+
+Data Structure Changes:
+- CITimed record contains:
+  * ttl: Int (time-to-live in seconds)
+  * deleteAt: Maybe UTCTime (when message should be deleted)
+
+Timer Mechanism:
+- deleteAt is calculated as: current_time + ttl_seconds
+- Background thread monitors deleteAt timestamps and deletes expired messages
+- startProximateTimedItemThread handles the actual deletion scheduling
+
+Impact Analysis:
+- More predictable message lifetimes (based on send time, not read time)
+- Better privacy protection (messages don't linger indefinitely if unread)
+- Consistent behavior across different message types
+- Default 1-day expiration improves privacy by default
+
+Compatibility:
+- Database schema unchanged (timedTTL and timedDeleteAt fields already exist)
+- Existing preferences system works with new default
+- No breaking changes to API or protocol
+
+===============================================================================
+FILES MODIFIED
+===============================================================================
+
+1. src/Simplex/Chat/Types/Preferences.hs
+   - Function: defaultChatPrefs
+   - Change: ttl = Nothing → ttl = Just 86400
+   - Purpose: Set 1-day default TTL
+
+2. src/Simplex/Chat/Library/Internal.hs
+   - Function: sndCITimed_
+   - Change: Removed live message conditional logic
+   - Purpose: Make all messages use send-time based deletion
+
+3. src/Simplex/Chat/Store/Messages.hs
+   - Function: createNewChatItem_
+   - Change: Persist deleteAt at insert time using item_ts + ttl when deleteAt is missing
+   - Details:
+     OLD CODE (excerpt):
+       ... :. ciTimedRow timed
+     NEW CODE (excerpt):
+       ... :. ciTimedRowAt itemTs timed
+     Support function added:
+       ciTimedRowAt :: UTCTime -> Maybe CITimed -> (Maybe Int, Maybe UTCTime)
+       -- When deleteAt is not provided, default to item_ts + ttl
+   - Purpose: Ensure received items get timed_delete_at set immediately based on broker/server timestamp
+
+4. src/Simplex/Chat/Library/Internal.hs
+   - Function: saveRcvChatItem'
+   - Changes:
+     - If received item has CITimed ttl with deleteAt = Nothing, compute deleteAt = brokerTs + ttl
+     - Pass computed CITimed to persistence and ChatItem construction
+     - Immediately schedule deletion via startProximateTimedItemThread for received items with deleteAt
+   - Purpose: Enforce send-time semantics for received messages and schedule deletion without waiting for reads
+
+5. src/Simplex/Chat/Messages.hs
+   - Change: Updated CITimed comment to reflect defaulting behavior (“when not provided, defaults to sent/received time + ttl”)
+   - Purpose: Keep documentation in sync with new behavior
+
+===============================================================================
+CHANGE 3: PERSIST deleteAt FOR RECEIVED ITEMS AT INSERT TIME
+===============================================================================
+
+File: src/Simplex/Chat/Store/Messages.hs
+Function: createNewChatItem_ (itemRow section) and timed row helper
+Line Number: ~452 (itemRow), ~478 (ciTimedRowAt)
+
+OLD CODE (excerpt):
+  itemRow :: (SMsgDirection d, UTCTime, CIContent d, Text, Text, CIStatus d, Maybe MsgContentTag, Maybe SharedMsgId, Maybe GroupMemberId, BoolInt) :. (UTCTime, UTCTime, Maybe BoolInt, BoolInt) :. (Maybe Int, Maybe UTCTime)
+  itemRow = (msgDirection @d, itemTs, ciContent, toCIContentTag ciContent, ciContentToText ciContent, ciCreateStatus ciContent, msgContentTag <$> ciMsgContent ciContent, sharedMsgId, forwardedByMember, BI includeInHistory) :. (createdAt, createdAt, BI <$> (justTrue live), BI userMention) :. ciTimedRow timed
+
+  ciTimedRow :: Maybe CITimed -> (Maybe Int, Maybe UTCTime)
+  ciTimedRow (Just CITimed {ttl, deleteAt}) = (Just ttl, deleteAt)
+  ciTimedRow _ = (Nothing, Nothing)
+
+NEW CODE (excerpt):
+  itemRow :: (SMsgDirection d, UTCTime, CIContent d, Text, Text, CIStatus d, Maybe MsgContentTag, Maybe SharedMsgId, Maybe GroupMemberId, BoolInt) :. (UTCTime, UTCTime, Maybe BoolInt, BoolInt) :. (Maybe Int, Maybe UTCTime)
+  itemRow = (msgDirection @d, itemTs, ciContent, toCIContentTag ciContent, ciContentToText ciContent, ciCreateStatus ciContent, msgContentTag <$> ciMsgContent ciContent, sharedMsgId, forwardedByMember, BI includeInHistory) :. (createdAt, createdAt, BI <$> (justTrue live), BI userMention) :. ciTimedRowAt itemTs timed
+
+  -- When deleteAt is not provided, default to send/receive time based TTL: item_ts + ttl
+  ciTimedRowAt :: UTCTime -> Maybe CITimed -> (Maybe Int, Maybe UTCTime)
+  ciTimedRowAt createdAt (Just CITimed {ttl, deleteAt}) =
+    let deleteAt' = Just $ maybe (addUTCTime (realToFrac ttl) createdAt) id deleteAt
+     in (Just ttl, deleteAt')
+  ciTimedRowAt _ Nothing = (Nothing, Nothing)
+
+RATIONALE:
+- Ensure `timed_delete_at` is populated for received items immediately using `item_ts + ttl`.
+- This enables send-time deletion on receiver without waiting for read events.
+
+===============================================================================
+CHANGE 4: COMPUTE deleteAt ON RECEIVE AND SCHEDULE IMMEDIATELY
+===============================================================================
+
+File: src/Simplex/Chat/Library/Internal.hs
+Function: saveRcvChatItem'
+Line Number: ~1928
+
+OLD CODE (excerpt):
+saveRcvChatItem' user cd notInHistory_ msg@RcvMessage {chatMsgEvent, forwardedByMember} sharedMsgId_ brokerTs (content, (t, ft_)) ciFile itemTimed live mentions = do
+  createdAt <- liftIO getCurrentTime
+  withStore' $ \db -> do
+    when (ciRequiresAttention content || contactChatDeleted cd) $ updateChatTs db user cd createdAt
+    (mentions' :: Map MemberName CIMention, userMention) <- case cd of
+      CDGroupRcv g@GroupInfo {membership} _ -> do
+        mentions' <- getRcvCIMentions db user g ft_ mentions
+        let userReply = case cmToQuotedMsg chatMsgEvent of
+              Just QuotedMsg {msgRef = MsgRef {memberId = Just mId}} -> sameMemberId mId membership
+              _ -> False
+            userMention' = userReply || any (\CIMention {memberId} -> sameMemberId memberId membership) mentions'
+         in pure (mentions', userMention')
+      CDDirectRcv _ -> pure (M.empty, False)
+    (ciId, quotedItem, itemForwarded) <- createNewRcvChatItem db user cd notInHistory_ msg sharedMsgId_ content itemTimed live userMention brokerTs createdAt
+    forM_ ciFile $ \CIFile {fileId} -> updateFileTransferChatItemId db fileId ciId createdAt
+    let ci = mkChatItem_ cd ciId content (t, ft_) ciFile quotedItem sharedMsgId_ itemForwarded itemTimed live userMention brokerTs forwardedByMember createdAt
+    case cd of
+      CDGroupRcv g _ | not (null mentions') -> createGroupCIMentions db g ci mentions'
+      _ -> pure ci
+
+NEW CODE (excerpt):
+saveRcvChatItem' user cd notInHistory_ msg@RcvMessage {chatMsgEvent, forwardedByMember} sharedMsgId_ brokerTs (content, (t, ft_)) ciFile itemTimed live mentions = do
+  createdAt <- liftIO getCurrentTime
+  let itemTimed' = case itemTimed of
+        Just CITimed {ttl, deleteAt = Nothing} -> Just $ CITimed ttl (Just $ addUTCTime (realToFrac ttl) brokerTs)
+        _ -> itemTimed
+  ci <- withStore' $ \db -> do
+    when (ciRequiresAttention content || contactChatDeleted cd) $ updateChatTs db user cd createdAt
+    (mentions' :: Map MemberName CIMention, userMention) <- case cd of
+      CDGroupRcv g@GroupInfo {membership} _ -> do
+        mentions' <- getRcvCIMentions db user g ft_ mentions
+        let userReply = case cmToQuotedMsg chatMsgEvent of
+              Just QuotedMsg {msgRef = MsgRef {memberId = Just mId}} -> sameMemberId mId membership
+              _ -> False
+            userMention' = userReply || any (\CIMention {memberId} -> sameMemberId memberId membership) mentions'
+         in pure (mentions', userMention')
+      CDDirectRcv _ -> pure (M.empty, False)
+    (ciId, quotedItem, itemForwarded) <- createNewRcvChatItem db user cd notInHistory_ msg sharedMsgId_ content itemTimed' live userMention brokerTs createdAt
+    forM_ ciFile $ \CIFile {fileId} -> updateFileTransferChatItemId db fileId ciId createdAt
+    let ci = mkChatItem_ cd ciId content (t, ft_) ciFile quotedItem sharedMsgId_ itemForwarded itemTimed' live userMention brokerTs forwardedByMember createdAt
+    case cd of
+      CDGroupRcv g _ | not (null mentions') -> createGroupCIMentions db g ci mentions'
+      _ -> pure ci
+  -- schedule deletion for received timed items immediately
+  forM_ (itemTimed' >>= timedDeleteAt') $ \deleteAt -> do
+    let chatRef = case cd of
+          CDDirectRcv Contact {contactId} -> ChatRef CTDirect contactId
+          CDGroupRcv GroupInfo {groupId} _ -> ChatRef CTGroup groupId
+          _ -> ChatRef CTLocal 0
+    startProximateTimedItemThread user (chatRef, chatItemId' ci) deleteAt
+  pure ci
+
+RATIONALE:
+- If the received item lacks deleteAt, compute it from broker time: deleteAt = brokerTs + ttl.
+- Persist and expose this in-memory immediately, then schedule deletion without waiting for read.
+
+===============================================================================
+CHANGE 5: UPDATE CITimed COMMENT (DOCUMENTATION)
+===============================================================================
+
+File: src/Simplex/Chat/Messages.hs
+Type: CITimed
+
+OLD CODE (line):
+  deleteAt :: Maybe UTCTime -- this is initially Nothing for received items, the timer starts when they are read
+
+NEW CODE (line):
+  deleteAt :: Maybe UTCTime -- when not provided, defaults to sent/received time + ttl
+
+RATIONALE:
+- Reflects the new behavior where receivers derive deleteAt from send/receive time, not from reads.
+
+===============================================================================
+VERIFICATION STEPS
+===============================================================================
+
+To verify these changes work correctly:
+
+1. Build the project: cabal build
+2. Test default behavior: New chats should have 1-day disappearing messages
+3. Test send-time logic: Messages should disappear 1 day after sending, not reading
+4. Test existing preferences: User-configured TTL settings should still override defaults
+5. Test disabled messages: Setting TTL to Nothing should still disable feature
+6. Test receive without reading: Send a timed message to a client, don’t open/read it; verify it deletes TTL seconds after send (using broker time)
+7. DB check for received item: timed_delete_at is set at insert; not modified on read
+8. Restart resilience: Restart app and confirm near-future deletions are re-scheduled (existing cleanup manager logic)
+
+===============================================================================
+NOTES
+===============================================================================
+
+- These changes maintain backward compatibility
+- Existing user preferences will override the new defaults
+- The change improves privacy by making message expiration more predictable
+- Build should complete without errors as no new dependencies were introduced
+- All existing functionality remains intact
+
+ADDITIONAL BEHAVIOR NOTES
+- Received messages previously set deleteAt on read; now they set it at receive time and schedule immediately.
+- Delete time on receiver uses broker/server timestamp as a proxy for send time; minor drift vs sender’s clock is expected.
+- Read handlers continue to set deleteAt only for items where it’s NULL; they won’t override send-time deleteAt.
+
+===============================================================================

@@ -1,0 +1,451 @@
+===============================================================================
+SIMPLEX CHAT - READ INDICATIONS (MINIMAL) — COMPLETE COPY/PASTE GUIDE
+===============================================================================
+
+Date: August 19, 2025
+
+Scope
+- Direct chats only. Adds a new JSON event x.msg.read and wires send/receive.
+- No DB migrations. Backward compatible: peers lacking support ignore the event.
+
+===============================================================================
+1) PROTOCOL: add XMsgRead and JSON wiring
+===============================================================================
+
+File: src/Simplex/Chat/Protocol.hs
+
+A. Add a new constructor to ChatMsgEvent (place around other XMsg* JSON events):
+   -- Acknowledge that the listed messages have been read (direct chats only for now)
+   XMsgRead :: NonEmpty SharedMsgId -> ChatMsgEvent 'Json
+
+B. Add a CMEventTag for it:
+   XMsgRead_ :: CMEventTag 'Json
+
+C. Map the tag string in StrEncoding (strEncode) and in strP (strDecode):
+   XMsgRead_ -> "x.msg.read"
+   ...
+   "x.msg.read" -> XMsgRead_
+
+D. Extend toCMEventTag:
+   XMsgRead {} -> XMsgRead_
+
+E. JSON parsing (appJsonToCM):
+   XMsgRead_ -> XMsgRead <$> p "msgIds"
+
+F. JSON encoding (chatToAppMessage):
+   XMsgRead msgIds -> o ["msgIds" .= msgIds]
+
+Notes:
+- Keep formatting and imports consistent with the file. No new imports required.
+
+===============================================================================
+2) COMMANDS: send XMsgRead when marking direct chats/items read
+===============================================================================
+
+File: src/Simplex/Chat/Library/Commands.hs
+
+In APIChatRead (CTDirect branch), after scheduling timers, add:
+   -- Send read receipts (direct only): collect unread items' shared ids and emit XMsgRead if allowed
+   when (not $ null allUnreadIds) $ do
+      mPayload <- withFastStore $ \db -> do
+         ct <- getContact db vr user chatId
+         case L.nonEmpty allUnreadIds of
+            Nothing -> pure Nothing
+            Just neItemIds -> do
+               sharedIds <- getDirectSharedMsgIdsByItemIds db user chatId neItemIds
+               pure $ Just (ct, sharedIds)
+      forM_ mPayload $ \(ct, msgIds) -> do
+         case L.nonEmpty msgIds of
+            Nothing -> pure ()
+            Just neMsgIds -> do
+               let Contact {chatSettings = ChatSettings {sendRcpts}} = ct
+               let allow = fromMaybe (sendRcptsContacts user) sendRcpts
+               when allow $ void $ sendDirectContactMessage user ct (XMsgRead neMsgIds)
+
+In APIChatItemsRead (CTDirect branch), after scheduling timers, add:
+   -- Send read receipts for the selected items (not only timed)
+   when (not $ null itemIds) $ do
+      mPayload <- withFastStore $ \db -> do
+         ct <- getContact db vr user chatId
+         case L.nonEmpty (L.toList itemIds) of
+            Nothing -> pure Nothing
+            Just neItemIds -> do
+               sharedIds <- getDirectSharedMsgIdsByItemIds db user chatId neItemIds
+               pure $ Just (ct, sharedIds)
+      forM_ mPayload $ \(ct, msgIds) -> do
+         case L.nonEmpty msgIds of
+            Nothing -> pure ()
+            Just neMsgIds -> do
+               let Contact {chatSettings = ChatSettings {sendRcpts}} = ct
+               let allow = fromMaybe (sendRcptsContacts user) sendRcpts
+               when allow $ void $ sendDirectContactMessage user ct (XMsgRead neMsgIds)
+
+Imports: no new imports; uses existing ones (L for NonEmpty, fromMaybe, etc.).
+
+===============================================================================
+3) SUBSCRIBER: handle inbound x.msg.read for direct chats
+===============================================================================
+
+File: src/Simplex/Chat/Library/Subscriber.hs
+
+Add a case arm inside processEvent for direct contact messages:
+   XMsgRead msgIds -> directReadAcks ct'' conn'' msgIds
+
+Add the helper near other direct update helpers:
+   -- Inbound read acknowledgements for direct messages
+   directReadAcks :: Contact -> Connection -> NonEmpty SharedMsgId -> CM ()
+   directReadAcks ct Connection {connId} sharedMsgIds = do
+      forM_ (L.toList sharedMsgIds) $ \smid -> do
+         withStore' $ \db ->
+            runExceptT (getDirectMessageIdBySharedMsgId db connId smid) >>= \case
+               Right messageId -> updateSndMsgDeliveryStatusByMessageId db connId messageId MDSSndRead
+               Left _ -> pure ()
+      -- UI can later reuse CEvtChatItemsStatusesUpdated for read state
+
+Imports: ensure these are available where directReadAcks lives:
+- Control.Monad.Trans.Except (runExceptT)
+- Data.List.NonEmpty qualified as L (already used)
+- Simplex.Chat.Store.Messages (getDirectMessageIdBySharedMsgId, updateSndMsgDeliveryStatusByMessageId)
+- Simplex.Chat.Messages (MsgDeliveryStatus(..)) — MDSSndRead
+
+===============================================================================
+4) STORE: add helper functions and export them
+===============================================================================
+
+File: src/Simplex/Chat/Store/Messages.hs
+
+A. Update the module export list (top of the file) to include:
+   -- Read receipts helpers
+   getDirectUnreadItemIds,
+   getDirectSharedMsgIdsByItemIds,
+   getDirectMessageIdBySharedMsgId,
+   updateSndMsgDeliveryStatusByMessageId,
+   getChatItemIdsByMessageId,
+
+B. Add these helper implementations (place with other query helpers):
+
+   -- Given a list of chat item IDs, return the corresponding shared message IDs (skips items without shared_msg_id)
+   getDirectSharedMsgIdsByItemIds :: DB.Connection -> User -> ContactId -> NonEmpty ChatItemId -> IO [SharedMsgId]
+   getDirectSharedMsgIdsByItemIds db User {userId} contactId itemIds = do
+      fmap catMaybes . forM (L.toList itemIds) $ \itemId -> maybeFirstRow fromOnly $ do
+         DB.query
+            db
+            [sql|
+               SELECT shared_msg_id
+               FROM chat_items
+               WHERE user_id = ? AND contact_id = ? AND chat_item_id = ? AND shared_msg_id IS NOT NULL
+            |]
+            (userId, contactId, itemId)
+
+   -- message_id -> [chat_item_id] mapping (prepare for future UI updates if needed)
+   getChatItemIdsByMessageId :: DB.Connection -> Int64 -> IO [ChatItemId]
+   getChatItemIdsByMessageId db messageId =
+      map fromOnly
+         <$> DB.query
+            db
+            [sql|
+               SELECT chat_item_id
+               FROM chat_item_messages
+               WHERE message_id = ?
+            |]
+            (Only messageId)
+
+   -- For direct messages: find our sent message_id by shared message id
+   getDirectMessageIdBySharedMsgId :: DB.Connection -> Int64 -> SharedMsgId -> ExceptT StoreError IO Int64
+   getDirectMessageIdBySharedMsgId db connId sharedMsgId =
+      ExceptT . firstRow fromOnly (SEChatItemSharedMsgIdNotFound sharedMsgId) $
+         DB.query
+            db
+            [sql|
+               SELECT message_id
+               FROM messages
+               WHERE connection_id = ? AND shared_msg_id = ? AND msg_sent = ?
+               ORDER BY message_id DESC
+               LIMIT 1
+            |]
+            (connId, sharedMsgId, MDSnd)
+
+   -- Update msg_deliveries by message_id instead of agent_msg_id (useful for read receipts)
+   updateSndMsgDeliveryStatusByMessageId :: DB.Connection -> Int64 -> Int64 -> MsgDeliveryStatus 'MDSnd -> IO ()
+   updateSndMsgDeliveryStatusByMessageId db connId messageId sndMsgDeliveryStatus = do
+      currentTs <- getCurrentTime
+      DB.execute
+         db
+         [sql|
+            UPDATE msg_deliveries
+            SET delivery_status = ?, updated_at = ?
+            WHERE connection_id = ? AND message_id = ?
+         |]
+         (sndMsgDeliveryStatus, currentTs, connId, messageId)
+
+Imports: ensure at top of file you have (most already exist in this module):
+- import Control.Monad.Trans.Except (ExceptT(..))
+- import Data.Int (Int64)
+- import Data.Time (getCurrentTime)
+
+===============================================================================
+Quality gates and notes
+===============================================================================
+- Build should pass without schema changes. If your tree is missing firstRow helper, adapt getDirectMessageIdBySharedMsgId to use a Maybe pattern.
+- Guard sending by your existing “send receipts” prefs to remain privacy-compatible.
+- Group read receipts are out of scope here.
+
+===============================================================================
+APPENDIX — OLD vs NEW with approximate line numbers (by file)
+===============================================================================
+
+File: src/Simplex/Chat/Protocol.hs
+Section A: ChatMsgEvent constructor (around ~330)
+OLD CODE:
+   XMsgReact :: {msgId :: SharedMsgId, memberId :: Maybe MemberId, reaction :: MsgReaction, add :: Bool} -> ChatMsgEvent 'Json
+   XFile :: FileInvitation -> ChatMsgEvent 'Json -- TODO discontinue
+
+NEW CODE:
+   XMsgReact :: {msgId :: SharedMsgId, memberId :: Maybe MemberId, reaction :: MsgReaction, add :: Bool} -> ChatMsgEvent 'Json
+   -- Acknowledge that the listed messages have been read (direct chats only for now)
+   XMsgRead :: NonEmpty SharedMsgId -> ChatMsgEvent 'Json
+   XFile :: FileInvitation -> ChatMsgEvent 'Json -- TODO discontinue
+
+Section B: CMEventTag (around ~820)
+OLD CODE:
+   XMsgReact_ :: CMEventTag 'Json
+   XFile_ :: CMEventTag 'Json
+
+NEW CODE:
+   XMsgReact_ :: CMEventTag 'Json
+   XMsgRead_ :: CMEventTag 'Json
+   XFile_ :: CMEventTag 'Json
+
+Section C: strEncode/strDecode tag mapping (around ~860 and ~940)
+OLD CODE (strEncode):
+      XMsgReact_ -> "x.msg.react"
+      -- no mapping for x.msg.read
+
+NEW CODE (strEncode):
+      XMsgReact_ -> "x.msg.react"
+      XMsgRead_ -> "x.msg.read"
+
+OLD CODE (strP/strDecode):
+            "x.msg.react" -> XMsgReact_
+            -- no case for x.msg.read
+
+NEW CODE (strP/strDecode):
+            "x.msg.react" -> XMsgReact_
+            "x.msg.read" -> XMsgRead_
+
+Section D: toCMEventTag (around ~975)
+OLD CODE:
+   XMsgReact {} -> XMsgReact_
+   XFile _ -> XFile_
+
+NEW CODE:
+   XMsgReact {} -> XMsgReact_
+   XMsgRead {} -> XMsgRead_
+   XFile _ -> XFile_
+
+Section E: JSON parse in appJsonToCM (around ~1080)
+OLD CODE:
+         XMsgReact_ -> XMsgReact <$> p "msgId" <*> opt "memberId" <*> p "reaction" <*> p "add"
+         -- no XMsgRead_
+
+NEW CODE:
+         XMsgReact_ -> XMsgReact <$> p "msgId" <*> opt "memberId" <*> p "reaction" <*> p "add"
+         XMsgRead_ -> XMsgRead <$> p "msgIds"
+
+Section F: JSON encode in chatToAppMessage (around ~1145)
+OLD CODE:
+         XMsgReact msgId' memberId reaction add -> o $ ("memberId" .=? memberId) ["msgId" .= msgId', "reaction" .= reaction, "add" .= add]
+         -- no XMsgRead
+
+NEW CODE:
+         XMsgReact msgId' memberId reaction add -> o $ ("memberId" .=? memberId) ["msgId" .= msgId', "reaction" .= reaction, "add" .= add]
+         XMsgRead msgIds -> o ["msgIds" .= msgIds]
+
+-------------------------------------------------------------------------------
+
+File: src/Simplex/Chat/Library/Commands.hs
+Section G: APIChatRead, CTDirect branch (around ~980)
+OLD CODE (excerpt):
+   (allUnreadIds, timedItems) <- withFastStore' $ \db -> do
+      allUnread <- getDirectUnreadItemIds db user chatId
+      timedItems <- getDirectUnreadTimedItems db user chatId
+      updateDirectChatItemsRead db user chatId
+      _ <- setDirectChatItemsDeleteAt db user chatId timedItems ts
+      pure (allUnread, timedItems)
+   forM_ timedItems $ \(itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
+   ok user
+
+NEW CODE (excerpt):
+   (allUnreadIds, timedItems) <- withFastStore' $ \db -> do
+      allUnread <- getDirectUnreadItemIds db user chatId
+      timedItems <- getDirectUnreadTimedItems db user chatId
+      updateDirectChatItemsRead db user chatId
+      _ <- setDirectChatItemsDeleteAt db user chatId timedItems ts
+      pure (allUnread, timedItems)
+   forM_ timedItems $ \(itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
+   -- Send read receipts (direct only): collect unread items' shared ids and emit XMsgRead if allowed
+   when (not $ null allUnreadIds) $ do
+      mPayload <- withFastStore $ \db -> do
+         ct <- getContact db vr user chatId
+         case L.nonEmpty allUnreadIds of
+            Nothing -> pure Nothing
+            Just neItemIds -> do
+               sharedIds <- getDirectSharedMsgIdsByItemIds db user chatId neItemIds
+               pure $ Just (ct, sharedIds)
+      forM_ mPayload $ \(ct, msgIds) -> do
+         case L.nonEmpty msgIds of
+            Nothing -> pure ()
+            Just neMsgIds -> do
+               let Contact {chatSettings = ChatSettings {sendRcpts}} = ct
+               let allow = fromMaybe (sendRcptsContacts user) sendRcpts
+               when allow $ void $ sendDirectContactMessage user ct (XMsgRead neMsgIds)
+   ok user
+
+Section H: APIChatItemsRead, CTDirect branch (around ~1025)
+OLD CODE (excerpt):
+   timedItems <- withFastStore' $ \db -> do
+      timedItems <- updateDirectChatItemsReadList db user chatId itemIds
+      setDirectChatItemsDeleteAt db user chatId timedItems =<< getCurrentTime
+   forM_ timedItems $ \(itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
+   ok user
+
+NEW CODE (excerpt):
+   timedItems <- withFastStore' $ \db -> do
+      timedItems <- updateDirectChatItemsReadList db user chatId itemIds
+      setDirectChatItemsDeleteAt db user chatId timedItems =<< getCurrentTime
+   forM_ timedItems $ \(itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
+   -- Send read receipts for the selected items (not only timed)
+   when (not $ null itemIds) $ do
+      mPayload <- withFastStore $ \db -> do
+         ct <- getContact db vr user chatId
+         case L.nonEmpty (L.toList itemIds) of
+            Nothing -> pure Nothing
+            Just neItemIds -> do
+               sharedIds <- getDirectSharedMsgIdsByItemIds db user chatId neItemIds
+               pure $ Just (ct, sharedIds)
+      forM_ mPayload $ \(ct, msgIds) -> do
+         case L.nonEmpty msgIds of
+            Nothing -> pure ()
+            Just neMsgIds -> do
+               let Contact {chatSettings = ChatSettings {sendRcpts}} = ct
+               let allow = fromMaybe (sendRcptsContacts user) sendRcpts
+               when allow $ void $ sendDirectContactMessage user ct (XMsgRead neMsgIds)
+   ok user
+
+-------------------------------------------------------------------------------
+
+File: src/Simplex/Chat/Library/Subscriber.hs
+Section I: processEvent case arm (around ~485)
+OLD CODE (excerpt):
+   case event of
+      XMsgNew mc -> newContentMessage ct'' mc msg msgMeta
+      XMsgFileDescr sharedMsgId fileDescr -> messageFileDescription ct'' sharedMsgId fileDescr
+      XMsgUpdate sharedMsgId mContent _ ttl live -> messageUpdate ct'' sharedMsgId mContent msg msgMeta ttl live
+      ...
+
+NEW CODE (excerpt):
+   case event of
+      XMsgNew mc -> newContentMessage ct'' mc msg msgMeta
+      XMsgRead msgIds -> directReadAcks ct'' conn'' msgIds
+      XMsgFileDescr sharedMsgId fileDescr -> messageFileDescription ct'' sharedMsgId fileDescr
+      XMsgUpdate sharedMsgId mContent _ ttl live -> messageUpdate ct'' sharedMsgId mContent msg msgMeta ttl live
+      ...
+
+Section J: directReadAcks helper (around ~2785)
+OLD CODE: (function did not exist)
+
+NEW CODE:
+   -- Inbound read acknowledgements for direct messages
+   directReadAcks :: Contact -> Connection -> NonEmpty SharedMsgId -> CM ()
+   directReadAcks ct Connection {connId} sharedMsgIds = do
+      forM_ (L.toList sharedMsgIds) $ \smid -> do
+         withStore' $ \db ->
+            runExceptT (getDirectMessageIdBySharedMsgId db connId smid) >>= \case
+               Right messageId -> updateSndMsgDeliveryStatusByMessageId db connId messageId MDSSndRead
+               Left _ -> pure ()
+
+-------------------------------------------------------------------------------
+
+File: src/Simplex/Chat/Store/Messages.hs
+Section K: module export list (top of file)
+OLD CODE (excerpt):
+   updateLocalChatItemsRead,
+   -- (no read receipts helpers exported here)
+
+NEW CODE (excerpt):
+   updateLocalChatItemsRead,
+   getDirectUnreadItemIds,
+   -- Read receipts helpers
+   getDirectSharedMsgIdsByItemIds,
+   getDirectMessageIdBySharedMsgId,
+   updateSndMsgDeliveryStatusByMessageId,
+   getChatItemIdsByMessageId,
+
+Section L: helper implementations (around ~2080–2125)
+OLD CODE: (helpers did not exist)
+
+NEW CODE:
+   getChatItemIdsByMessageId :: DB.Connection -> Int64 -> IO [ChatItemId]
+   getChatItemIdsByMessageId db messageId =
+      map fromOnly
+         <$> DB.query
+            db
+            [sql|
+               SELECT chat_item_id
+               FROM chat_item_messages
+               WHERE message_id = ?
+            |]
+            (Only messageId)
+
+   getDirectSharedMsgIdsByItemIds :: DB.Connection -> User -> ContactId -> NonEmpty ChatItemId -> IO [SharedMsgId]
+   getDirectSharedMsgIdsByItemIds db User {userId} contactId itemIds = do
+      fmap catMaybes . forM (L.toList itemIds) $ \itemId -> maybeFirstRow fromOnly $ do
+         DB.query
+            db
+            [sql|
+               SELECT shared_msg_id
+               FROM chat_items
+               WHERE user_id = ? AND contact_id = ? AND chat_item_id = ? AND shared_msg_id IS NOT NULL
+            |]
+            (userId, contactId, itemId)
+
+   getDirectMessageIdBySharedMsgId :: DB.Connection -> Int64 -> SharedMsgId -> ExceptT StoreError IO Int64
+   getDirectMessageIdBySharedMsgId db connId sharedMsgId =
+      ExceptT . firstRow fromOnly (SEChatItemSharedMsgIdNotFound sharedMsgId) $
+         DB.query
+            db
+            [sql|
+               SELECT message_id
+               FROM messages
+               WHERE connection_id = ? AND shared_msg_id = ? AND msg_sent = ?
+               ORDER BY message_id DESC
+               LIMIT 1
+            |]
+            (connId, sharedMsgId, MDSnd)
+
+   updateSndMsgDeliveryStatusByMessageId :: DB.Connection -> Int64 -> Int64 -> MsgDeliveryStatus 'MDSnd -> IO ()
+   updateSndMsgDeliveryStatusByMessageId db connId messageId sndMsgDeliveryStatus = do
+      currentTs <- getCurrentTime
+      DB.execute
+         db
+         [sql|
+            UPDATE msg_deliveries
+            SET delivery_status = ?, updated_at = ?
+            WHERE connection_id = ? AND message_id = ?
+         |]
+         (sndMsgDeliveryStatus, currentTs, connId, messageId)
+
+Imports added (if missing):
+- import Control.Monad.Trans.Except (ExceptT(..))
+- import Data.Int (Int64)
+- import Data.Time (getCurrentTime)
+
+===============================================================================
+
+===============================================================================
+NOTES & COMPATIBILITY
+===============================================================================
+
+- Group read receipts are out of scope in this minimal change and remain unimplemented.
+- Peers that don’t support x.msg.read will ignore it safely as an unknown event.
+- UI rendering for read status can be added later by extending status mapping and view functions.
