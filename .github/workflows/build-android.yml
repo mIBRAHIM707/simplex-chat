@@ -10,7 +10,7 @@ on:
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60  # Increased for Nix builds
     
     steps:
     - name: Checkout code
@@ -30,13 +30,6 @@ jobs:
           experimental-features = nix-command flakes
           sandbox = true
           max-jobs = auto
-          
-    - name: Cache Nix store
-      uses: cachix/cachix-action@v14
-      with:
-        name: simplex-chat
-        authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
-        skipPush: true  # Only use cache, don't push
         
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
@@ -73,32 +66,71 @@ jobs:
         echo "🚀 Building Android APK with Nix + Gradle..."
         chmod +x scripts/android/build-android.sh
         
+        # Set environment variables for the build
+        export ARCHES="aarch64 armv7a"
+        
         # Use the official build script with -s flag (use current source)
         # This will build native libs with Nix and then use Gradle for APK
-        ./scripts/android/build-android.sh -s
+        echo "Starting build process..."
         
-        echo "✅ Build completed successfully!"
+        # Run with error handling
+        set -e
+        if ./scripts/android/build-android.sh -s 2>&1 | tee build.log; then
+          echo "✅ Build completed successfully!"
+        else
+          echo "❌ Build failed. Checking logs..."
+          tail -50 build.log || true
+          echo "🔍 Checking for partial APKs..."
+          find . -name "*.apk" -type f -exec ls -la {} \; || true
+          exit 1
+        fi
+        
+        echo "📱 Checking for generated APK files..."
+        ls -la simplex-chat-*.apk || echo "⚠️  APKs not found in root directory, checking other locations..."
+        find . -name "*.apk" -type f | head -10
         
     - name: Upload APK artifacts
       uses: actions/upload-artifact@v4
       with:
         name: simplex-chat-release-apks
-        path: simplex-chat-*.apk
+        path: |
+          simplex-chat-*.apk
+          apps/multiplatform/android/build/outputs/apk/release/*.apk
+        if-no-files-found: warn
         retention-days: 7
         
     - name: List generated APKs
       run: |
         echo "📱 Generated APK files:"
-        ls -la simplex-chat-*.apk
-        echo "✅ APKs ready for download!"
+        if ls simplex-chat-*.apk 1> /dev/null 2>&1; then
+          ls -la simplex-chat-*.apk
+          echo "✅ APKs ready for download!"
+        else
+          echo "⚠️  No APKs found in root directory"
+          echo "🔍 Searching for APKs in build directories..."
+          find . -name "*.apk" -type f -exec ls -la {} \;
+        fi
         
-    - name: Upload build reports
+    - name: Upload build logs
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: build-logs
+        path: |
+          build.log
+          *.log
+        if-no-files-found: ignore
+        retention-days: 3
+        
+    - name: Upload build reports on failure
       uses: actions/upload-artifact@v4
       if: failure()
       with:
         name: build-reports
         path: |
-          apps/multiplatform/*/build/reports/
-          /tmp/simplex-chat*/
+          apps/multiplatform/android/build/reports/
+          apps/multiplatform/common/build/reports/
+          nix-build.log
+        if-no-files-found: ignore
         retention-days: 1
 
