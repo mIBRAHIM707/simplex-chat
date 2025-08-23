@@ -131,6 +131,8 @@ data User = User
     showNtfs :: Bool,
     sendRcptsContacts :: Bool,
     sendRcptsSmallGroups :: Bool,
+    sendReadRcptsContacts :: Bool,
+    sendReadRcptsSmallGroups :: Bool,
     userMemberProfileUpdatedAt :: Maybe UTCTime,
     uiThemes :: Maybe UIThemeEntityOverrides
   }
@@ -462,6 +464,7 @@ contactAndGroupIds = \case
 data ChatSettings = ChatSettings
   { enableNtfs :: MsgFilter,
     sendRcpts :: Maybe Bool,
+    sendReadRcpts :: Maybe Bool,
     favorite :: Bool
   }
   deriving (Eq, Show)
@@ -471,6 +474,7 @@ defaultChatSettings =
   ChatSettings
     { enableNtfs = MFAll,
       sendRcpts = Nothing,
+      sendReadRcpts = Nothing,
       favorite = False
     }
 

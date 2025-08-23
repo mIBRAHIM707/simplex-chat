@@ -277,7 +277,7 @@ getGroupAndMember db User {userId, userContactId} groupMemberId vr = do
           SELECT
             -- GroupInfo
             g.group_id, g.local_display_name, gp.display_name, gp.full_name, g.local_alias, gp.description, gp.image,
-            g.enable_ntfs, g.send_rcpts, g.favorite, gp.preferences, gp.member_admission,
+            g.enable_ntfs, g.send_rcpts, g.send_read_rcpts, g.favorite, gp.preferences, gp.member_admission,
             g.created_at, g.updated_at, g.chat_ts, g.user_member_profile_sent_at, g.business_chat, g.business_member_id, g.customer_member_id, g.ui_themes, g.custom_data, g.chat_item_ttl,
             -- GroupInfo {membership}
             mu.group_member_id, mu.group_id, mu.member_id, mu.peer_chat_min_version, mu.peer_chat_max_version, mu.member_role, mu.member_category,
@@ -341,7 +341,7 @@ createNewGroup db vr gVar user@User {userId} groupProfile incognitoProfile = Exc
       insertedRowId db
     memberId <- liftIO $ encodedRandomBytes gVar 12
     membership <- createContactMemberInv_ db user groupId Nothing user (MemberIdRole (MemberId memberId) GROwner) GCUserMember GSMemCreator IBUser customUserProfileId currentTs vr
-    let chatSettings = ChatSettings {enableNtfs = MFAll, sendRcpts = Nothing, favorite = False}
+    let chatSettings = ChatSettings {enableNtfs = MFAll, sendRcpts = Nothing, sendReadRcpts = Nothing, favorite = False}
     pure
       GroupInfo
         { groupId,
@@ -411,7 +411,7 @@ createGroupInvitation db vr user@User {userId} contact@Contact {contactId, activ
           let hostVRange = adjustedMemberVRange vr peerChatVRange
           GroupMember {groupMemberId} <- createContactMemberInv_ db user groupId Nothing contact fromMember GCHostMember GSMemInvited IBUnknown Nothing currentTs hostVRange
           membership <- createContactMemberInv_ db user groupId (Just groupMemberId) user invitedMember GCUserMember GSMemInvited (IBContact contactId) incognitoProfileId currentTs vr
-          let chatSettings = ChatSettings {enableNtfs = MFAll, sendRcpts = Nothing, favorite = False}
+          let chatSettings = ChatSettings {enableNtfs = MFAll, sendRcpts = Nothing, sendReadRcpts = Nothing, favorite = False}
           pure
             ( GroupInfo
                 { groupId,
@@ -763,7 +763,7 @@ getUserGroupDetails db vr User {userId, userContactId} _contactId_ search_ = do
         [sql|
           SELECT
             g.group_id, g.local_display_name, gp.display_name, gp.full_name, g.local_alias, gp.description, gp.image,
-            g.enable_ntfs, g.send_rcpts, g.favorite, gp.preferences, gp.member_admission,
+            g.enable_ntfs, g.send_rcpts, g.send_read_rcpts, g.favorite, gp.preferences, gp.member_admission,
             g.created_at, g.updated_at, g.chat_ts, g.user_member_profile_sent_at, g.business_chat, g.business_member_id, g.customer_member_id, g.ui_themes, g.custom_data, g.chat_item_ttl,
             mu.group_member_id, g.group_id, mu.member_id, mu.peer_chat_min_version, mu.peer_chat_max_version, mu.member_role, mu.member_category, mu.member_status, mu.show_messages, mu.member_restriction,
             mu.invited_by, mu.invited_by_group_member_id, mu.local_display_name, mu.contact_id, mu.contact_profile_id, pu.contact_profile_id, pu.display_name, pu.full_name, pu.image, pu.contact_link, pu.local_alias, pu.preferences,
@@ -1544,7 +1544,7 @@ getViaGroupMember db vr User {userId, userContactId} Contact {contactId} = do
           SELECT
             -- GroupInfo
             g.group_id, g.local_display_name, gp.display_name, gp.full_name, g.local_alias, gp.description, gp.image,
-            g.enable_ntfs, g.send_rcpts, g.favorite, gp.preferences, gp.member_admission,
+            g.enable_ntfs, g.send_rcpts, g.send_read_rcpts, g.favorite, gp.preferences, gp.member_admission,
             g.created_at, g.updated_at, g.chat_ts, g.user_member_profile_sent_at, g.business_chat, g.business_member_id, g.customer_member_id, g.ui_themes, g.custom_data, g.chat_item_ttl,
             -- GroupInfo {membership}
             mu.group_member_id, mu.group_id, mu.member_id, mu.peer_chat_min_version, mu.peer_chat_max_version, mu.member_role, mu.member_category,

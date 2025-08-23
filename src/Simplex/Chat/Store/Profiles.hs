@@ -17,6 +17,7 @@
 module Simplex.Chat.Store.Profiles
   ( AutoAccept (..),
     UserMsgReceiptSettings (..),
+    UserReadReceiptSettings (..),
     UserContactLink (..),
     GroupLinkInfo (..),
     createUserRecord,
@@ -39,6 +40,8 @@ module Simplex.Chat.Store.Profiles
     updateAllContactReceipts,
     updateUserContactReceipts,
     updateUserGroupReceipts,
+    updateUserContactReadReceipts,
+    updateUserGroupReadReceipts,
     updateUserProfile,
     setUserProfileContactLink,
     getUserContactProfiles,
@@ -130,6 +133,8 @@ createUserRecordAt db (AgentUserId auId) Profile {displayName, fullName, image, 
     let showNtfs = True
         sendRcptsContacts = True
         sendRcptsSmallGroups = True
+        sendReadRcptsContacts = True
+        sendReadRcptsSmallGroups = True
     order <- getNextActiveOrder db
     DB.execute
       db
@@ -151,7 +156,7 @@ createUserRecordAt db (AgentUserId auId) Profile {displayName, fullName, image, 
       (profileId, displayName, userId, BI True, currentTs, currentTs, currentTs)
     contactId <- insertedRowId db
     DB.execute db "UPDATE users SET contact_id = ? WHERE user_id = ?" (contactId, userId)
-    pure $ toUser $ (userId, auId, contactId, profileId, BI activeUser, order, displayName, fullName, image, Nothing, userPreferences) :. (BI showNtfs, BI sendRcptsContacts, BI sendRcptsSmallGroups, Nothing, Nothing, Nothing, Nothing)
+    pure $ toUser $ (userId, auId, contactId, profileId, BI activeUser, order, displayName, fullName, image, Nothing, userPreferences) :. (BI showNtfs, BI sendRcptsContacts, BI sendRcptsSmallGroups, BI sendReadRcptsContacts, BI sendReadRcptsSmallGroups, Nothing, Nothing, Nothing, Nothing)
 
 -- TODO [mentions]
 getUsersInfo :: DB.Connection -> IO [UserInfo]
@@ -285,6 +290,18 @@ updateUserGroupReceipts :: DB.Connection -> User -> UserMsgReceiptSettings -> IO
 updateUserGroupReceipts db User {userId} UserMsgReceiptSettings {enable, clearOverrides} = do
   DB.execute db "UPDATE users SET send_rcpts_small_groups = ? WHERE user_id = ?" (BI enable, userId)
   when clearOverrides $ DB.execute_ db "UPDATE groups SET send_rcpts = NULL"
+
+-- | Update user's read receipt settings for contacts
+updateUserContactReadReceipts :: DB.Connection -> User -> UserReadReceiptSettings -> IO ()
+updateUserContactReadReceipts db User {userId} UserReadReceiptSettings {enableReadRcpts, clearReadRcptOverrides} = do
+  DB.execute db "UPDATE users SET send_read_rcpts_contacts = ? WHERE user_id = ?" (BI enableReadRcpts, userId)
+  when clearReadRcptOverrides $ DB.execute_ db "UPDATE contacts SET send_read_rcpts = NULL"
+
+-- | Update user's read receipt settings for groups
+updateUserGroupReadReceipts :: DB.Connection -> User -> UserReadReceiptSettings -> IO ()
+updateUserGroupReadReceipts db User {userId} UserReadReceiptSettings {enableReadRcpts, clearReadRcptOverrides} = do
+  DB.execute db "UPDATE users SET send_read_rcpts_small_groups = ? WHERE user_id = ?" (BI enableReadRcpts, userId)
+  when clearReadRcptOverrides $ DB.execute_ db "UPDATE groups SET send_read_rcpts = NULL"
 
 updateUserProfile :: DB.Connection -> User -> Profile -> ExceptT StoreError IO User
 updateUserProfile db user p'
@@ -449,6 +466,13 @@ deleteUserAddress db user@User {userId} = do
 data UserMsgReceiptSettings = UserMsgReceiptSettings
   { enable :: Bool,
     clearOverrides :: Bool
+  }
+  deriving (Show)
+
+-- | Separate settings for read receipts vs delivery receipts
+data UserReadReceiptSettings = UserReadReceiptSettings
+  { enableReadRcpts :: Bool,
+    clearReadRcptOverrides :: Bool
   }
   deriving (Show)
 

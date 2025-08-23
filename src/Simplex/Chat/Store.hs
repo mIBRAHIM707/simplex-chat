@@ -5,6 +5,7 @@ module Simplex.Chat.Store
     StoreError (..),
     ChatLockEntity (..),
     UserMsgReceiptSettings (..),
+    UserReadReceiptSettings (..),
     UserContactLink (..),
     GroupLinkInfo (..),
     AutoAccept (..),

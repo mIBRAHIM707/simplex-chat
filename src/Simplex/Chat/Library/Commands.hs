@@ -376,6 +376,18 @@ processChatCommand' vr = \case
     withFastStore' $ \db -> updateUserGroupReceipts db user' settings
     ok user
   SetUserGroupReceipts settings -> withUser $ \User {userId} -> processChatCommand $ APISetUserGroupReceipts userId settings
+  APISetUserContactReadReceipts userId' settings -> withUser $ \user -> do
+    user' <- privateGetUser userId'
+    validateUserPassword user user' Nothing
+    withFastStore' $ \db -> updateUserContactReadReceipts db user' settings
+    ok user
+  SetUserContactReadReceipts settings -> withUser $ \User {userId} -> processChatCommand $ APISetUserContactReadReceipts userId settings
+  APISetUserGroupReadReceipts userId' settings -> withUser $ \user -> do
+    user' <- privateGetUser userId'
+    validateUserPassword user user' Nothing
+    withFastStore' $ \db -> updateUserGroupReadReceipts db user' settings
+    ok user
+  SetUserGroupReadReceipts settings -> withUser $ \User {userId} -> processChatCommand $ APISetUserGroupReadReceipts userId settings
   APIHideUser userId' (UserPwd viewPwd) -> withUser $ \user -> do
     user' <- privateGetUser userId'
     case viewPwdHash user' of
@@ -1001,8 +1013,8 @@ processChatCommand' vr = \case
           case L.nonEmpty msgIds of
             Nothing -> pure ()
             Just neMsgIds -> do
-              let Contact {chatSettings = ChatSettings {sendRcpts}} = ct
-              let allow = fromMaybe (sendRcptsContacts user) sendRcpts
+              let Contact {chatSettings = ChatSettings {sendReadRcpts}} = ct
+              let allow = fromMaybe (sendReadRcptsContacts user) sendReadRcpts
               when allow $ void $ sendDirectContactMessage user ct (XMsgRead neMsgIds)
       ok user
     CTGroup -> do
@@ -1040,8 +1052,8 @@ processChatCommand' vr = \case
           case L.nonEmpty msgIds of
             Nothing -> pure ()
             Just neMsgIds -> do
-              let Contact {chatSettings = ChatSettings {sendRcpts}} = ct
-              let allow = fromMaybe (sendRcptsContacts user) sendRcpts
+              let Contact {chatSettings = ChatSettings {sendReadRcpts}} = ct
+              let allow = fromMaybe (sendReadRcptsContacts user) sendReadRcpts
               when allow $ void $ sendDirectContactMessage user ct (XMsgRead neMsgIds)
       ok user
     CTGroup -> do
@@ -3913,6 +3925,10 @@ chatCommandP =
       "/set receipts contacts " *> (SetUserContactReceipts <$> receiptSettings),
       "/_set receipts groups " *> (APISetUserGroupReceipts <$> A.decimal <* A.space <*> receiptSettings),
       "/set receipts groups " *> (SetUserGroupReceipts <$> receiptSettings),
+      "/_set read_receipts contacts " *> (APISetUserContactReadReceipts <$> A.decimal <* A.space <*> readReceiptSettings),
+      "/set read_receipts contacts " *> (SetUserContactReadReceipts <$> readReceiptSettings),
+      "/_set read_receipts groups " *> (APISetUserGroupReadReceipts <$> A.decimal <* A.space <*> readReceiptSettings),
+      "/set read_receipts groups " *> (SetUserGroupReadReceipts <$> readReceiptSettings),
       "/_hide user " *> (APIHideUser <$> A.decimal <* A.space <*> jsonP),
       "/_unhide user " *> (APIUnhideUser <$> A.decimal <* A.space <*> jsonP),
       "/_mute user " *> (APIMuteUser <$> A.decimal),
@@ -4308,6 +4324,10 @@ chatCommandP =
       enable <- onOffP
       clearOverrides <- (" clear_overrides=" *> onOffP) <|> pure False
       pure UserMsgReceiptSettings {enable, clearOverrides}
+    readReceiptSettings = do
+      enableReadRcpts <- onOffP
+      clearReadRcptOverrides <- (" clear_overrides=" *> onOffP) <|> pure False
+      pure UserReadReceiptSettings {enableReadRcpts, clearReadRcptOverrides}
     onOffP = ("on" $> True) <|> ("off" $> False)
     profileNames = (,) <$> displayNameP <*> fullNameP
     newUserP = do

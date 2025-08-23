@@ -62,7 +62,7 @@ import Simplex.Chat.Protocol
 import Simplex.Chat.Remote.AppVersion
 import Simplex.Chat.Remote.Types
 import Simplex.Chat.Stats (PresentedServersSummary)
-import Simplex.Chat.Store (AutoAccept, ChatLockEntity, StoreError (..), UserContactLink, GroupLinkInfo, UserMsgReceiptSettings)
+import Simplex.Chat.Store (AutoAccept, ChatLockEntity, StoreError (..), UserContactLink, GroupLinkInfo, UserMsgReceiptSettings, UserReadReceiptSettings)
 import Simplex.Chat.Types
 import Simplex.Chat.Types.Preferences
 import Simplex.Chat.Types.Shared
@@ -266,6 +266,10 @@ data ChatCommand
   | SetUserContactReceipts UserMsgReceiptSettings
   | APISetUserGroupReceipts UserId UserMsgReceiptSettings
   | SetUserGroupReceipts UserMsgReceiptSettings
+  | APISetUserContactReadReceipts UserId UserReadReceiptSettings
+  | SetUserContactReadReceipts UserReadReceiptSettings
+  | APISetUserGroupReadReceipts UserId UserReadReceiptSettings
+  | SetUserGroupReadReceipts UserReadReceiptSettings
   | APIHideUser UserId UserPwd
   | APIUnhideUser UserId UserPwd
   | APIMuteUser UserId
