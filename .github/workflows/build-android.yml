@@ -61,41 +61,20 @@ jobs:
         
         echo "✅ All read receipts files validated!"
         
-    - name: Setup Nix environment for build script
-      run: |
-        # Source Nix environment
-        source ~/.nix-profile/etc/profile.d/nix.sh
-        
-        # Verify Nix is working
-        nix --version
-        
-        # The build script expects Nix profile to be available
-        echo "Nix profile sourced successfully"
-        echo "NIX_PATH: ${NIX_PATH:-not set}"
-        
     - name: Build Android APK using official script
       run: |
         echo "🚀 Building Android APK with Nix + Gradle..."
-        
-        # Source Nix environment in this shell
-        source ~/.nix-profile/etc/profile.d/nix.sh
-        
-        # Make script executable
         chmod +x scripts/android/build-android.sh
-        
         # Set environment variables for the build
         export ARCHES="aarch64 armv7a"
-        
         echo "📋 Environment check:"
         echo "Nix version: $(nix --version)"
         echo "Java version: $(java -version 2>&1 | head -1)"
         echo "Gradle available: $(which gradle || echo 'Using wrapper')"
-        
         # Use the official build script with -s flag (use current source)
         echo "Starting build process..."
-        
-        # Run with error handling and Nix environment
-        if bash -c "source ~/.nix-profile/etc/profile.d/nix.sh && ./scripts/android/build-android.sh -s" 2>&1 | tee build.log; then
+        # Run with error handling
+        if ./scripts/android/build-android.sh -s 2>&1 | tee build.log; then
           echo "✅ Build completed successfully!"
         else
           echo "❌ Build failed. Checking logs..."
@@ -104,7 +83,6 @@ jobs:
           find . -name "*.apk" -type f -exec ls -la {} \; || true
           exit 1
         fi
-        
         echo "📱 Checking for generated APK files..."
         ls -la simplex-chat-*.apk || echo "⚠️  APKs not found in root directory, checking other locations..."
         find . -name "*.apk" -type f | head -10
