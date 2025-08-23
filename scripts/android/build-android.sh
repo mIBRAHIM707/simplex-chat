@@ -25,17 +25,6 @@ arch_map() {
   esac
 }
 
-nix_install() {
-  # Pre-setup nix
-  [ ! -d /nix ] && sudo sh -c "mkdir -p /nix && chown -R $u /nix"
-
-  # Install nix
-  curl -sSf "$nix_url" -o "$tmp/nix-install"
-  printf "%s %s" "$nix_hash" "$tmp/nix-install" | sha256sum -c
-  chmod +x "$tmp/nix-install" && "$tmp/nix-install" --no-daemon
-
-  . "$HOME/.nix-profile/etc/profile.d/nix.sh"
-}
 
 nix_setup() {
   printf "%s" "$nix_config" > "$tmp/nix.conf"
@@ -59,7 +48,8 @@ checks() {
     case $i in
       nix)
         if ! command -v "$i" > /dev/null 2>&1 || [ ! -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
-          nix_install
+          printf "Error: Nix is not installed or not available in the environment. Please install Nix before running this script.\n"
+          exit 1
         fi
         nix_setup
         ;;
