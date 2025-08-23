@@ -25,6 +25,7 @@ jobs:
     - name: Setup Nix
       uses: cachix/install-nix-action@v25
       with:
+        install_options: --daemon
         nix_path: nixpkgs=channel:nixos-unstable
         extra_nix_config: |
           experimental-features = nix-command flakes
