@@ -22,16 +22,9 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         
-    - name: Remove existing /nix directory if present (workaround for CI)
-      run: |
-        if [ -d /nix ]; then
-          echo "/nix exists, attempting to remove..."
-          sudo rm -rf /nix || echo "Could not remove /nix, may not have permissions."
-        fi
-    - name: Setup Nix
-      uses: cachix/install-nix-action@v25
+    - name: Install Nix
+      uses: nixbuild/install-nix-action@v25
       with:
-        install_options: --daemon
         nix_path: nixpkgs=channel:nixos-unstable
         extra_nix_config: |
           experimental-features = nix-command flakes
