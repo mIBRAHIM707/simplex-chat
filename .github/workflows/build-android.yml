@@ -29,7 +29,17 @@ jobs:
 
     - name: Source Nix profile (make nix available in shell)
       run: |
-        . /home/runner/.nix-profile/etc/profile.d/nix.sh
+        set +e
+        if [ -f /home/runner/.nix-profile/etc/profile.d/nix.sh ]; then
+          . /home/runner/.nix-profile/etc/profile.d/nix.sh
+        fi
+        if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix.sh ]; then
+          . /nix/var/nix/profiles/default/etc/profile.d/nix.sh
+        fi
+        if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
+          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
+        fi
+        set -e
         nix --version
         
     - name: Setup Android SDK
