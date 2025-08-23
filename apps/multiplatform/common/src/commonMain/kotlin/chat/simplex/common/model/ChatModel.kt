@@ -2999,7 +2999,7 @@ sealed class CIStatus {
         }
         MsgReceiptStatus.BadMsgHash -> MR.images.ic_double_check to Color.Red
       }
-      is SndRead -> MR.images.ic_double_check to primaryColor
+      is SndRead -> MR.images.doubleTickBlue to primaryColor
       is SndErrorAuth -> MR.images.ic_close to Color.Red
       is CISSndError -> MR.images.ic_close to Color.Red
       is SndWarning -> MR.images.ic_warning_filled to WarningOrange

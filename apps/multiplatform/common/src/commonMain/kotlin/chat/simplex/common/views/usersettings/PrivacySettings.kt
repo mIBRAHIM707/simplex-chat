@@ -170,9 +170,8 @@ fun PrivacySettingsView(
 
       fun setSendReadReceiptsContacts(enable: Boolean, clearOverrides: Boolean) {
         withLongRunningApi(slow = 60_000) {
-          // For now, we'll use the same API as delivery receipts since backend treats them together
-          val mrs = UserMsgReceiptSettings(enable, clearOverrides)
-          chatModel.controller.apiSetUserContactReceipts(currentUser, mrs)
+          val rrs = UserReadReceiptSettings(enable, clearOverrides)
+          chatModel.controller.apiSetUserContactReadReceipts(currentUser, rrs)
           chatModel.controller.appPrefs.privacyDeliveryReceiptsSet.set(true)
           chatModel.currentUser.value = currentUser.copy(sendReadRcptsContacts = enable)
           if (clearOverrides) {
@@ -195,9 +194,8 @@ fun PrivacySettingsView(
 
       fun setSendReadReceiptsGroups(enable: Boolean, clearOverrides: Boolean) {
         withLongRunningApi(slow = 60_000) {
-          // For now, we'll use the same API as delivery receipts since backend treats them together
-          val mrs = UserMsgReceiptSettings(enable, clearOverrides)
-          chatModel.controller.apiSetUserGroupReceipts(currentUser, mrs)
+          val rrs = UserReadReceiptSettings(enable, clearOverrides)
+          chatModel.controller.apiSetUserGroupReadReceipts(currentUser, rrs)
           chatModel.controller.appPrefs.privacyDeliveryReceiptsSet.set(true)
           chatModel.currentUser.value = currentUser.copy(sendReadRcptsSmallGroups = enable)
           if (clearOverrides) {

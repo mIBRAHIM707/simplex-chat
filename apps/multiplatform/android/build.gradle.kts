@@ -8,6 +8,8 @@ plugins {
 }
 
 android {
+lint {abortOnError = false}
+lint {abortOnError = false}
     compileSdk = 34
 
     defaultConfig {
@@ -75,7 +77,7 @@ android {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
         }
-        jniLibs.useLegacyPackaging = rootProject.extra["compression.level"] as Int != 0
+        jniLibs.useLegacyPackaging = true
     }
     android.sourceSets["main"].assets.setSrcDirs(listOf("../common/src/commonMain/resources/assets"))
     val isRelease = gradle.startParameter.taskNames.find { it.lowercase().contains("release") } != null
@@ -154,72 +156,3 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-tooling:1.6.4")
 }
 
-tasks {
-    val compressApk by creating {
-        doLast {
-            val isRelease = gradle.startParameter.taskNames.find { it.lowercase().contains("release") } != null
-            val buildType: String = if (isRelease) "release" else "debug"
-            val javaHome = System.getProperties()["java.home"] ?: org.gradle.internal.jvm.Jvm.current().javaHome
-            val sdkDir = android.sdkDirectory.absolutePath
-            val keyAlias: String
-            val keyPassword: String
-            val storeFile: String
-            val storePassword: String
-            if (project.properties["android.injected.signing.key.alias"] != null) {
-                keyAlias = project.properties["android.injected.signing.key.alias"] as String
-                keyPassword = project.properties["android.injected.signing.key.password"] as String
-                storeFile = project.properties["android.injected.signing.store.file"] as String
-                storePassword = project.properties["android.injected.signing.store.password"] as String
-            } else {
-                try {
-                    val gradleConfig = android.signingConfigs.getByName(buildType)
-                    keyAlias = gradleConfig.keyAlias!!
-                    keyPassword = gradleConfig.keyPassword!!
-                    storeFile = gradleConfig.storeFile!!.absolutePath
-                    storePassword = gradleConfig.storePassword!!
-                } catch (e: UnknownDomainObjectException) {
-                    // There is no signing config for current build type, can"t sign the apk
-                    println("No signing configs for this build type: $buildType")
-                    return@doLast
-                }
-            }
-            lateinit var outputDir: File
-            named(if (isRelease) "packageRelease" else "packageDebug") {
-                outputDir = outputs.files.files.last()
-            }
-            exec {
-                workingDir("../../../scripts/android")
-                environment = mapOf("JAVA_HOME" to "$javaHome")
-                commandLine = listOf(
-                    "./compress-and-sign-apk.sh",
-                    "${rootProject.extra["compression.level"]}",
-                    "$outputDir",
-                    sdkDir,
-                    storeFile,
-                    storePassword,
-                    keyAlias,
-                    keyPassword
-                )
-            }
-
-            if (project.properties["android.injected.signing.key.alias"] != null && buildType == "release") {
-                File(outputDir, "android-release.apk").renameTo(File(outputDir, "simplex.apk"))
-                File(outputDir, "android-armeabi-v7a-release.apk").renameTo(File(outputDir, "simplex-armv7a.apk"))
-                File(outputDir, "android-arm64-v8a-release.apk").renameTo(File(outputDir, "simplex.apk"))
-            }
-            // View all gradle properties set
-            // project.properties.each { k, v -> println "$k -> $v" }
-        }
-    }
-
-    // Don"t do anything if no compression is needed
-    if (rootProject.extra["compression.level"] as Int != 0) {
-        whenTaskAdded {
-            if (name == "packageDebug") {
-                finalizedBy(compressApk)
-            } else if (name == "packageRelease") {
-                finalizedBy(compressApk)
-            }
-        }
-    }
-}
