@@ -23,7 +23,7 @@ jobs:
         distribution: 'temurin'
         
     - name: Install Nix
-      uses: nixbuild/install-nix-action@v25
+      uses: nix-community/install-nix-action@v25
       with:
         nix_path: nixpkgs=channel:nixos-unstable
         extra_nix_config: |
