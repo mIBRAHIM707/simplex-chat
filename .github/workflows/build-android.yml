@@ -81,12 +81,12 @@ jobs:
         nix --version
         echo "🛠 Nix profile sourced"
 
-    - name: Debug: Show active substituters
+    - name: Debug Show active substituters
       run: |
         echo "🔎 Active substituters:"
         nix show-config | grep substituters || true
 
-    - name: Debug: Show android closure size
+    - name: Debug Show android closure size
       run: |
         echo "📦 Android closure size for .#android:"
         nix path-info -rsSh .#android || true
