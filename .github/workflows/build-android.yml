@@ -28,10 +28,42 @@ jobs:
       with:
         nix_path: nixpkgs=channel:nixos-unstable
 
+    - name: Cache Nix downloads and profile
+      uses: actions/cache@v4
+      with:
+        path: |
+          /home/runner/.cache/nix
+          /home/runner/.nix-profile
+          /nix/var/nix/profiles/per-user/root
+        key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}-${{ github.ref }}
+        restore-keys: |
+          ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}-
+          ${{ runner.os }}-nix-
+
+    - name: Cache Gradle
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-${{ hashFiles('**/gradle.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
     - name: Enable Cachix binary cache (nix-community)
       uses: cachix/cachix-action@v14
       with:
         name: nix-community
+
+    - name: Enable Cachix binary cache (haskell-nix)
+      uses: cachix/cachix-action@v14
+      with:
+        name: haskell-nix
+
+    - name: Enable Cachix binary cache (iohk)
+      uses: cachix/cachix-action@v14
+      with:
+        name: iohk
 
     - name: Source Nix profile (make nix available in shell)
       run: |
@@ -47,6 +79,17 @@ jobs:
         fi
         set -e
         nix --version
+        echo "🛠 Nix profile sourced"
+
+    - name: Debug: Show active substituters
+      run: |
+        echo "🔎 Active substituters:"
+        nix show-config | grep substituters || true
+
+    - name: Debug: Show android closure size
+      run: |
+        echo "📦 Android closure size for .#android:"
+        nix path-info -rsSh .#android || true
         
     - name: Setup Android SDK
       uses: android-actions/setup-android@v3
