@@ -5,12 +5,12 @@ on:
     branches: [ master, main ]
   pull_request:
     branches: [ master, main ]
-  workflow_dispatch:
+  workflow_dispatch:  # Allow manual trigger
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 60  # Increased for Nix builds
     
     steps:
     - name: Checkout code
@@ -26,6 +26,17 @@ jobs:
       uses: cachix/install-nix-action@v31
       with:
         nix_path: nixpkgs=channel:nixos-unstable
+
+    - name: Configure extra public binary caches
+      run: |
+        echo "substituters = https://cache.nixos.org https://cache.flakehub.com https://nix-community.cachix.org https://iohk.cachix.org" | sudo tee -a /etc/nix/nix.conf
+        echo "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= \
+          flakehub.cachix.org-1:vhplGqZABvydOw3FdI4J4osL0tbuVn1TsXxUxAZnhVc= \
+          nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= \
+          iohk.cachix.org-1:ekg3Y0L4bth/vpBWSM9CmlkC8GsTqJzU8QWytv5yrOA=" | sudo tee -a /etc/nix/nix.conf
+
+        echo "✅ Extra caches configured!"
+        nix show-config | grep substituters
 
     - name: Cache Nix downloads and profile
       uses: actions/cache@v4
@@ -49,7 +60,6 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
 
-    # ✅ Public binary caches only
     - name: Enable Cachix binary cache (nix-community)
       uses: cachix/cachix-action@v14
       with:
@@ -60,7 +70,7 @@ jobs:
       with:
         name: iohk
 
-    - name: Source Nix profile
+    - name: Source Nix profile (make nix available in shell)
       run: |
         set +e
         if [ -f /home/runner/.nix-profile/etc/profile.d/nix.sh ]; then
@@ -80,13 +90,6 @@ jobs:
       run: |
         echo "🔎 Active substituters:"
         nix show-config | grep substituters || true
-
-    # 🚨 New Step: Cache diagnostics
-    - name: Cache diagnostics (check if builds are coming from cache)
-      run: |
-        echo "🔍 Checking if GHC/alex/happy are fetched or built..."
-        nix build .#android --dry-run --json | jq -r '.[] | select(.outputs != null) | [.drvPath, .realisations? // "MISSING (will build)"] | @tsv' || true
-        echo "💡 Lines with 'MISSING' mean they will be built instead of fetched from cache."
 
     - name: Debug Show android closure size
       run: |
@@ -116,11 +119,13 @@ jobs:
         echo "Nix version: $(nix --version)"
         echo "Java version: $(java -version 2>&1 | head -1)"
         echo "Gradle available: $(which gradle || echo 'Using wrapper')"
+        echo "Starting build process..."
         if ./scripts/android/build-android.sh -s 2>&1 | tee build.log; then
           echo "✅ Build completed successfully!"
         else
           echo "❌ Build failed. Checking logs..."
           tail -100 build.log || true
+          echo "🔍 Checking for partial APKs..."
           find . -name "*.apk" -type f -exec ls -la {} \; || true
           exit 1
         fi
@@ -143,8 +148,10 @@ jobs:
         echo "📱 Generated APK files:"
         if ls simplex-chat-*.apk 1> /dev/null 2>&1; then
           ls -la simplex-chat-*.apk
+          echo "✅ APKs ready for download!"
         else
           echo "⚠️  No APKs found in root directory"
+          echo "🔍 Searching for APKs in build directories..."
           find . -name "*.apk" -type f -exec ls -la {} \;
         fi
         
