@@ -22,10 +22,16 @@ jobs:
         java-version: '17'
         distribution: 'temurin'
         
+
     - name: Install Nix
       uses: cachix/install-nix-action@v31
       with:
         nix_path: nixpkgs=channel:nixos-unstable
+
+    - name: Enable Cachix binary cache (nix-community)
+      uses: cachix/cachix-action@v14
+      with:
+        name: nix-community
 
     - name: Source Nix profile (make nix available in shell)
       run: |
