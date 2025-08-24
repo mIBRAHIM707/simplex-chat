@@ -47,7 +47,7 @@ checks() {
   for i in $commands; do
     case $i in
       nix)
-        if ! command -v "$i" > /dev/null 2>&1 || [ ! -f "$HOME/.nix-profile/etc/profile.d/nix.sh" ]; then
+        if ! command -v "$i" > /dev/null 2>&1; then
           printf "Error: Nix is not installed or not available in the environment. Please install Nix before running this script.\n"
           exit 1
         fi
