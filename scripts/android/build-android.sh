@@ -15,7 +15,7 @@ nix_config="sandbox = true
 max-jobs = auto
 experimental-features = nix-command flakes"
 
-commands="nix git curl gradle zip unzip zipalign"
+commands="nix git curl zip unzip zipalign"
 arches="${ARCHES:-aarch64 armv7a}"
 
 arch_map() {
@@ -54,20 +54,7 @@ checks() {
         nix_setup
         ;;
       gradle)
-        if ! command -v "$i" > /dev/null 2>&1; then
-          commands_failed="$i $commands_failed"
-        else
-          gradle_ver_local="$(gradle -v | grep Gradle | awk '{print $2}')"
-          gradle_ver_local_compare="$(printf ${gradle_ver_local:-0.0} | awk -F. '{print $1$2}')"
-          gradle_ver_remote="$(grep distributionUrl ${folder}/apps/multiplatform/gradle/wrapper/gradle-wrapper.properties)"
-          gradle_ver_remote="${gradle_ver_remote#*-}"
-          gradle_ver_remote="${gradle_ver_remote%-*}"
-          gradle_ver_remote_compare="$(printf ${gradle_ver_remote} | awk -F. '{print $1$2}')"
-        
-          if [ "$gradle_ver_local_compare" != "$gradle_ver_remote_compare" ]; then
-            commands_failed="$i[installed=${gradle_ver_local},required=${gradle_ver_remote}] $commands_failed"
-          fi
-        fi
+        # No-op: gradle version is enforced by using ./gradlew if available
         ;;
       *)
         if ! command -v "$i" > /dev/null 2>&1; then
@@ -123,7 +110,12 @@ build() {
 
     # Build only one arch
     sed -i.bak "s/include(.*/include(\"${android_arch}\")/" "$folder/apps/multiplatform/android/build.gradle.kts"
-    gradle -p "$folder/apps/multiplatform/" clean :android:assembleRelease
+    gradle_cmd="gradle"
+    if [ -x "$folder/apps/multiplatform/gradlew" ]; then
+      gradle_cmd="$folder/apps/multiplatform/gradlew"
+      chmod +x "$gradle_cmd"
+    fi
+    "$gradle_cmd" -p "$folder/apps/multiplatform/" clean :android:assembleRelease
 
     mkdir -p "$android_tmp_folder"
     unzip -oqd "$android_tmp_folder" "$android_apk_output"
