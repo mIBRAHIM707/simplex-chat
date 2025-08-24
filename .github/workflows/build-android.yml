@@ -1,179 +1,56 @@
-name: Build Android APK with Read Receipts
+name: Build Android APK (Fast Gradle)
 
 on:
   push:
     branches: [ master, main ]
   pull_request:
     branches: [ master, main ]
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:  # manual trigger
 
 jobs:
   build-android:
     runs-on: ubuntu-latest
-    timeout-minutes: 60  # Increased for Nix builds
-    
+    timeout-minutes: 30
+
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        java-version: '17'
-        distribution: 'temurin'
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Install Nix
-      uses: cachix/install-nix-action@v31
-      with:
-        nix_path: nixpkgs=channel:nixos-unstable
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
 
-    - name: Configure extra public binary caches
-      run: |
-        echo "substituters = https://cache.nixos.org https://cache.flakehub.com https://nix-community.cachix.org https://iohk.cachix.org" | sudo tee -a /etc/nix/nix.conf
-        echo "trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= \
-          flakehub.cachix.org-1:vhplGqZABvydOw3FdI4J4osL0tbuVn1TsXxUxAZnhVc= \
-          nix-community.cachix.org-1:mB9FSh9qf2dCimDSUo8Zy7bkq5CX+/rkCWyvRCYg3Fs= \
-          iohk.cachix.org-1:ekg3Y0L4bth/vpBWSM9CmlkC8GsTqJzU8QWytv5yrOA=" | sudo tee -a /etc/nix/nix.conf
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          api-level: 34
+          build-tools: 34.0.0
 
-        echo "✅ Extra caches configured!"
-        nix show-config | grep substituters
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses
 
-    - name: Cache Nix downloads and profile
-      uses: actions/cache@v4
-      with:
-        path: |
-          /home/runner/.cache/nix
-          /home/runner/.nix-profile
-          /nix/var/nix/profiles/per-user/root
-        key: ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}-${{ github.ref }}
-        restore-keys: |
-          ${{ runner.os }}-nix-${{ hashFiles('flake.lock') }}-
-          ${{ runner.os }}-nix-
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
-    - name: Cache Gradle
-      uses: actions/cache@v4
-      with:
-        path: |
-          ~/.gradle/caches
-          ~/.gradle/wrapper
-        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}-${{ hashFiles('**/gradle.properties') }}
-        restore-keys: |
-          ${{ runner.os }}-gradle-
+      - name: Build APK with Gradle
+        run: ./gradlew assembleRelease
 
-    - name: Enable Cachix binary cache (nix-community)
-      uses: cachix/cachix-action@v14
-      with:
-        name: nix-community
+      - name: Upload APK artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 7
 
-    - name: Enable Cachix binary cache (iohk)
-      uses: cachix/cachix-action@v14
-      with:
-        name: iohk
-
-    - name: Source Nix profile (make nix available in shell)
-      run: |
-        set +e
-        if [ -f /home/runner/.nix-profile/etc/profile.d/nix.sh ]; then
-          . /home/runner/.nix-profile/etc/profile.d/nix.sh
-        fi
-        if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix.sh ]; then
-          . /nix/var/nix/profiles/default/etc/profile.d/nix.sh
-        fi
-        if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then
-          . /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh
-        fi
-        set -e
-        nix --version
-        echo "🛠 Nix profile sourced"
-
-    - name: Debug Show active substituters
-      run: |
-        echo "🔎 Active substituters:"
-        nix show-config | grep substituters || true
-
-    - name: Debug Show android closure size
-      run: |
-        echo "📦 Android closure size for .#android:"
-        nix path-info -rsSh .#android || true
-        
-    - name: Setup Android SDK
-      uses: android-actions/setup-android@v3
-      with:
-        api-level: 34
-        build-tools: 34.0.0
-        
-    - name: Accept Android SDK licenses
-      run: yes | sdkmanager --licenses
-      
-    - name: Install additional dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y curl git zip unzip zipalign
-        
-    - name: Build Android APK using official script
-      run: |
-        echo "🚀 Building Android APK with Nix + Gradle..."
-        chmod +x scripts/android/build-android.sh
-        export ARCHES="aarch64 armv7a"
-        echo "📋 Environment check:"
-        echo "Nix version: $(nix --version)"
-        echo "Java version: $(java -version 2>&1 | head -1)"
-        echo "Gradle available: $(which gradle || echo 'Using wrapper')"
-        echo "Starting build process..."
-        if ./scripts/android/build-android.sh -s 2>&1 | tee build.log; then
-          echo "✅ Build completed successfully!"
-        else
-          echo "❌ Build failed. Checking logs..."
-          tail -100 build.log || true
-          echo "🔍 Checking for partial APKs..."
-          find . -name "*.apk" -type f -exec ls -la {} \; || true
-          exit 1
-        fi
-        echo "📱 Checking for generated APK files..."
-        ls -la simplex-chat-*.apk || echo "⚠️  APKs not found in root directory, checking other locations..."
-        find . -name "*.apk" -type f | head -10
-        
-    - name: Upload APK artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        name: simplex-chat-release-apks
-        path: |
-          simplex-chat-*.apk
-          apps/multiplatform/android/build/outputs/apk/release/*.apk
-        if-no-files-found: warn
-        retention-days: 7
-        
-    - name: List generated APKs
-      run: |
-        echo "📱 Generated APK files:"
-        if ls simplex-chat-*.apk 1> /dev/null 2>&1; then
-          ls -la simplex-chat-*.apk
-          echo "✅ APKs ready for download!"
-        else
-          echo "⚠️  No APKs found in root directory"
-          echo "🔍 Searching for APKs in build directories..."
-          find . -name "*.apk" -type f -exec ls -la {} \;
-        fi
-        
-    - name: Upload build logs
-      uses: actions/upload-artifact@v4
-      if: always()
-      with:
-        name: build-logs
-        path: |
-          build.log
-          *.log
-        if-no-files-found: ignore
-        retention-days: 3
-        
-    - name: Upload build reports on failure
-      uses: actions/upload-artifact@v4
-      if: failure()
-      with:
-        name: build-reports
-        path: |
-          apps/multiplatform/android/build/reports/
-          apps/multiplatform/common/build/reports/
-          nix-build.log
-        if-no-files-found: ignore
-        retention-days: 1
+      - name: List generated APKs
+        run: ls -la app/build/outputs/apk/release || echo "⚠️ No APKs found"
