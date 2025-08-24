@@ -56,9 +56,17 @@ jobs:
         name: nix-community
 
     - name: Enable Cachix binary cache (haskell-nix)
+      if: ${{ secrets.CACHIX_AUTH_TOKEN != '' }}
       uses: cachix/cachix-action@v14
       with:
         name: haskell-nix
+        authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
+
+    - name: Skip haskell-nix cache (no token)
+      if: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
+      run: |
+        echo "⚠️  CACHIX_AUTH_TOKEN not set — skipping haskell-nix cachix enable."
+        echo "If you need the haskell-nix cache, create a Cachix token at https://app.cachix.org and add it as the repository secret 'CACHIX_AUTH_TOKEN'."
 
     - name: Enable Cachix binary cache (iohk)
       uses: cachix/cachix-action@v14
