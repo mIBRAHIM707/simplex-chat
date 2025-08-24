@@ -5,12 +5,12 @@ on:
     branches: [ master, main ]
   pull_request:
     branches: [ master, main ]
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 jobs:
   build-android:
-    runs-on: ubuntu-latest #largerr
-    timeout-minutes: 60  # Increased for Nix builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
     
     steps:
     - name: Checkout code
@@ -21,7 +21,6 @@ jobs:
       with:
         java-version: '17'
         distribution: 'temurin'
-        
 
     - name: Install Nix
       uses: cachix/install-nix-action@v31
@@ -50,30 +49,18 @@ jobs:
         restore-keys: |
           ${{ runner.os }}-gradle-
 
+    # ✅ Public binary caches only
     - name: Enable Cachix binary cache (nix-community)
       uses: cachix/cachix-action@v14
       with:
         name: nix-community
-
-    - name: Enable Cachix binary cache (haskell-nix)
-      if: ${{ secrets.CACHIX_AUTH_TOKEN != '' }}
-      uses: cachix/cachix-action@v14
-      with:
-        name: haskell-nix
-        authToken: ${{ secrets.CACHIX_AUTH_TOKEN }}
-
-    - name: Skip haskell-nix cache (no token)
-      if: ${{ secrets.CACHIX_AUTH_TOKEN == '' }}
-      run: |
-        echo "⚠️  CACHIX_AUTH_TOKEN not set — skipping haskell-nix cachix enable."
-        echo "If you need the haskell-nix cache, create a Cachix token at https://app.cachix.org and add it as the repository secret 'CACHIX_AUTH_TOKEN'."
 
     - name: Enable Cachix binary cache (iohk)
       uses: cachix/cachix-action@v14
       with:
         name: iohk
 
-    - name: Source Nix profile (make nix available in shell)
+    - name: Source Nix profile
       run: |
         set +e
         if [ -f /home/runner/.nix-profile/etc/profile.d/nix.sh ]; then
@@ -94,6 +81,13 @@ jobs:
         echo "🔎 Active substituters:"
         nix show-config | grep substituters || true
 
+    # 🚨 New Step: Cache diagnostics
+    - name: Cache diagnostics (check if builds are coming from cache)
+      run: |
+        echo "🔍 Checking if GHC/alex/happy are fetched or built..."
+        nix build .#android --dry-run --json | jq -r '.[] | select(.outputs != null) | [.drvPath, .realisations? // "MISSING (will build)"] | @tsv' || true
+        echo "💡 Lines with 'MISSING' mean they will be built instead of fetched from cache."
+
     - name: Debug Show android closure size
       run: |
         echo "📦 Android closure size for .#android:"
@@ -113,41 +107,20 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y curl git zip unzip zipalign
         
-    - name: Validate Kotlin syntax (Read Receipts)
-      run: |
-        echo "🔍 Validating Read Receipts implementation..."
-        
-        # Check if our files exist and have the right content
-        echo "✅ Checking ChatModel.kt..."
-        grep -q "sendReadRcptsContacts" apps/multiplatform/common/src/commonMain/kotlin/chat/simplex/common/model/ChatModel.kt || exit 1
-        
-        echo "✅ Checking SimpleXAPI.kt..."
-        grep -q "UserReadReceiptSettings" apps/multiplatform/common/src/commonMain/kotlin/chat/simplex/common/model/SimpleXAPI.kt || exit 1
-        
-        echo "✅ Checking PrivacySettings.kt..."
-        grep -q "setSendReadReceiptsContacts" apps/multiplatform/common/src/commonMain/kotlin/chat/simplex/common/views/usersettings/PrivacySettings.kt || exit 1
-        
-        echo "✅ All read receipts files validated!"
-        
     - name: Build Android APK using official script
       run: |
         echo "🚀 Building Android APK with Nix + Gradle..."
         chmod +x scripts/android/build-android.sh
-        # Set environment variables for the build
         export ARCHES="aarch64 armv7a"
         echo "📋 Environment check:"
         echo "Nix version: $(nix --version)"
         echo "Java version: $(java -version 2>&1 | head -1)"
         echo "Gradle available: $(which gradle || echo 'Using wrapper')"
-        # Use the official build script with -s flag (use current source)
-        echo "Starting build process..."
-        # Run with error handling
         if ./scripts/android/build-android.sh -s 2>&1 | tee build.log; then
           echo "✅ Build completed successfully!"
         else
           echo "❌ Build failed. Checking logs..."
           tail -100 build.log || true
-          echo "🔍 Checking for partial APKs..."
           find . -name "*.apk" -type f -exec ls -la {} \; || true
           exit 1
         fi
@@ -170,10 +143,8 @@ jobs:
         echo "📱 Generated APK files:"
         if ls simplex-chat-*.apk 1> /dev/null 2>&1; then
           ls -la simplex-chat-*.apk
-          echo "✅ APKs ready for download!"
         else
           echo "⚠️  No APKs found in root directory"
-          echo "🔍 Searching for APKs in build directories..."
           find . -name "*.apk" -type f -exec ls -la {} \;
         fi
         
@@ -199,4 +170,3 @@ jobs:
           nix-build.log
         if-no-files-found: ignore
         retention-days: 1
-
