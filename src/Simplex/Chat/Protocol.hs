@@ -975,6 +975,7 @@ toCMEventTag msg = case msg of
   XMsgDel {} -> XMsgDel_
   XMsgDeleted -> XMsgDeleted_
   XMsgReact {} -> XMsgReact_
+  XMsgRead _ -> XMsgRead_
   XFile _ -> XFile_
   XFileAcpt _ -> XFileAcpt_
   XFileAcptInv {} -> XFileAcptInv_

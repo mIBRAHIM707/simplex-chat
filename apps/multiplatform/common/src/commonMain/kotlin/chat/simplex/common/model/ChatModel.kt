@@ -2969,6 +2969,7 @@ sealed class CIStatus {
   @Serializable @SerialName("sndNew") class SndNew: CIStatus()
   @Serializable @SerialName("sndSent") class SndSent(val sndProgress: SndCIStatusProgress): CIStatus()
   @Serializable @SerialName("sndRcvd") class SndRcvd(val msgRcptStatus: MsgReceiptStatus, val sndProgress: SndCIStatusProgress): CIStatus()
+  @Serializable @SerialName("sndRead") class SndRead: CIStatus()
   @Serializable @SerialName("sndErrorAuth") class SndErrorAuth: CIStatus()
   @Serializable @SerialName("sndError") class CISSndError(val agentError: SndError): CIStatus()
   @Serializable @SerialName("sndWarning") class SndWarning(val agentError: SndError): CIStatus()
@@ -2994,6 +2995,7 @@ sealed class CIStatus {
         }
         MsgReceiptStatus.BadMsgHash -> MR.images.ic_double_check to Color.Red
       }
+      is SndRead -> MR.images.ic_double_check_blue to Color.Blue
       is SndErrorAuth -> MR.images.ic_close to Color.Red
       is CISSndError -> MR.images.ic_close to Color.Red
       is SndWarning -> MR.images.ic_warning_filled to WarningOrange
@@ -3006,6 +3008,7 @@ sealed class CIStatus {
     is SndNew -> null
     is SndSent -> null
     is SndRcvd -> null
+    is SndRead -> null
     is SndErrorAuth -> generalGetString(MR.strings.message_delivery_error_title) to generalGetString(MR.strings.message_delivery_error_desc)
     is CISSndError -> generalGetString(MR.strings.message_delivery_error_title) to agentError.errorInfo
     is SndWarning -> generalGetString(MR.strings.message_delivery_warning_title) to agentError.errorInfo
