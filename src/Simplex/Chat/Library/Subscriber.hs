@@ -48,6 +48,7 @@ import Simplex.Chat.Messages.CIContent
 import Simplex.Chat.Messages.CIContent.Events
 import Simplex.Chat.ProfileGenerator (generateRandomProfile)
 import Simplex.Chat.Protocol
+import Simplex.Chat.ReadReceipts
 import Simplex.Chat.Store
 import Simplex.Chat.Store.Connections
 import Simplex.Chat.Store.Direct
@@ -489,6 +490,7 @@ processAgentMessageConn vr user@User {userId} corrId agentConnId agentMessage = 
                 XMsgUpdate sharedMsgId mContent _ ttl live -> messageUpdate ct'' sharedMsgId mContent msg msgMeta ttl live
                 XMsgDel sharedMsgId _ -> messageDelete ct'' sharedMsgId msg msgMeta
                 XMsgReact sharedMsgId _ reaction add -> directMsgReaction ct'' sharedMsgId reaction add msg msgMeta
+                XMsgRead sharedMsgId -> processReadReceipt ct'' sharedMsgId msg msgMeta
                 -- TODO discontinue XFile
                 XFile fInv -> processFileInvitation' ct'' fInv msg msgMeta
                 XFileCancel sharedMsgId -> xFileCancel ct'' sharedMsgId
@@ -853,6 +855,7 @@ processAgentMessageConn vr user@User {userId} corrId agentConnId agentMessage = 
               XMsgUpdate sharedMsgId mContent mentions ttl live -> memberCanSend m' $ groupMessageUpdate gInfo m' sharedMsgId mContent mentions msg brokerTs ttl live
               XMsgDel sharedMsgId memberId -> groupMessageDelete gInfo m' sharedMsgId memberId msg brokerTs
               XMsgReact sharedMsgId (Just memberId) reaction add -> groupMsgReaction gInfo m' sharedMsgId memberId reaction add msg brokerTs
+              XMsgRead _ -> pure () -- Read receipts not supported for group chats
               -- TODO discontinue XFile
               XFile fInv -> processGroupFileInvitation' gInfo m' fInv msg brokerTs
               XFileCancel sharedMsgId -> xFileCancelGroup gInfo m' sharedMsgId
@@ -2731,6 +2734,7 @@ processAgentMessageConn vr user@User {userId} corrId agentConnId agentMessage = 
             XMsgUpdate sharedMsgId mContent mentions ttl live -> memberCanSend author $ groupMessageUpdate gInfo author sharedMsgId mContent mentions rcvMsg msgTs ttl live
             XMsgDel sharedMsgId memId -> groupMessageDelete gInfo author sharedMsgId memId rcvMsg msgTs
             XMsgReact sharedMsgId (Just memId) reaction add -> groupMsgReaction gInfo author sharedMsgId memId reaction add rcvMsg msgTs
+            XMsgRead _ -> pure () -- Read receipts not supported for group chats
             XFileCancel sharedMsgId -> xFileCancelGroup gInfo author sharedMsgId
             XInfo p -> xInfoMember gInfo author p msgTs
             XGrpMemNew memInfo -> xGrpMemNew gInfo author memInfo rcvMsg msgTs

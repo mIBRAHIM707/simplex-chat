@@ -1054,6 +1054,7 @@ hasDeliveryReceipt = \case
 hasReadReceipt :: CMEventTag e -> Bool
 hasReadReceipt = \case
   XMsgNew_ -> True
+  XMsgRead_ -> True
   _ -> False
 
 appBinaryToCM :: AppMessageBinary -> Either String (ChatMessage 'Binary)
