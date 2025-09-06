@@ -2,7 +2,7 @@
 # Safety measures
 set -eu
 
-repo="https://github.com/simplex-chat/simplex-chat"
+repo="https://github.com/mIBRAHIM707/simplex-chat"
 
 u="$USER"
 tmp="$(mktemp -d -t)"
@@ -165,7 +165,7 @@ pre() {
   
   shift $(( $OPTIND - 1 ))
   
-  commit="${1:-HEAD}"
+  commit="${1:-read-receipts-feature}"
 }
 
 main() {
