@@ -1,0 +1,562 @@
+================================================================================
+SIMPLEX CHAT DISAPPEARING MESSAGE TIMER CHANGES - DOCUMENTATION
+================================================================================
+
+Date: August 17, 2025
+Purpose: Change disappearing message timer logic from "read-time based" to "send-time based"
+         and set default TTL to 1 day for all new chats.
+
+================================================================================
+SUMMARY OF REQUIREMENTS
+================================================================================
+
+1. Change default TTL from disabled to 1 day (86400 seconds)
+2. Change timer logic: Instead of starting timer when message is read,
+   start timer immediately when message is sent/received
+3. Messages should delete exactly TTL seconds after being sent, regardless of read status
+4. Change default servers to custom servers (not implemented in this documentation)
+
+================================================================================
+DETAILED CHANGES
+================================================================================
+
+================================================================================
+FILE 1: src/Simplex/Chat/Types/Preferences.hs
+================================================================================
+PURPOSE: Change default timed messages TTL from None to 1 day
+
+LOCATION: Line 442
+
+PREVIOUS CODE:
+```haskell
+defaultChatPrefs :: FullPreferences
+defaultChatPrefs =
+  FullPreferences
+    { timedMessages = TimedMessagesPreference {allow = FAYes, ttl = Nothing},
+      fullDelete = FullDeletePreference {allow = FANo},
+      reactions = ReactionsPreference {allow = FAYes},
+```
+
+CHANGED TO:
+```haskell
+defaultChatPrefs :: FullPreferences
+defaultChatPrefs =
+  FullPreferences
+    { timedMessages = TimedMessagesPreference {allow = FAYes, ttl = Just 86400},
+      fullDelete = FullDeletePreference {allow = FANo},
+      reactions = ReactionsPreference {allow = FAYes},
+```
+
+EXPLANATION:
+- Changed `ttl = Nothing` to `ttl = Just 86400`
+- 86400 seconds = 24 hours = 1 day
+- This makes all new chats have disappearing messages enabled by default with 1-day TTL
+
+================================================================================
+FILE 2: src/Simplex/Chat/Messages.hs
+================================================================================
+PURPOSE: Prepare received messages for immediate timer setting
+
+LOCATION: Lines 599-603
+
+PREVIOUS CODE:
+```haskell
+rcvCITimed_ :: Maybe (Maybe Int) -> Maybe Int -> Maybe CITimed
+rcvCITimed_ chatTTL itemTTL = (`CITimed` Nothing) <$> (chatTTL >> itemTTL)
+```
+
+CHANGED TO:
+```haskell
+rcvCITimed_ :: Maybe (Maybe Int) -> Maybe Int -> Maybe CITimed
+rcvCITimed_ chatTTL itemTTL = do
+  ttl <- chatTTL >> itemTTL
+  Just $ CITimed ttl Nothing  -- We'll set the deleteAt time when the message is actually saved
+```
+
+EXPLANATION:
+- This function creates CITimed objects for received messages
+- Previously used point-free style with `(`CITimed` Nothing)`
+- Changed to explicit do-notation for clarity
+- The comment explains that deleteAt will be set later in the saving process
+
+================================================================================
+FILE 3: src/Simplex/Chat/Library/Internal.hs
+================================================================================
+PURPOSE: Set timer immediately when received messages are saved, not when read
+
+LOCATION: Lines 2134-2140 (Function signature and timer logic)
+
+PREVIOUS CODE:
+```haskell
+saveRcvChatItem' :: (ChatTypeI c, ChatTypeQuotable c) => User -> ChatDirection c 'MDRcv -> RcvMessage -> Maybe SharedMsgId -> UTCTime -> (CIContent 'MDRcv, (Text, Maybe MarkdownList)) -> Maybe (CIFile 'MDRcv) -> Maybe CITimed -> Bool -> Map MemberName MsgMention -> CM (ChatItem c 'MDRcv, ChatInfo c)
+saveRcvChatItem' user cd msg@RcvMessage {chatMsgEvent, forwardedByMember} sharedMsgId_ brokerTs (content, (t, ft_)) ciFile itemTimed live mentions = do
+  createdAt <- liftIO getCurrentTime
+  vr <- chatVersionRange
+```
+
+CHANGED TO:
+```haskell
+saveRcvChatItem' :: (ChatTypeI c, ChatTypeQuotable c) => User -> ChatDirection c 'MDRcv -> RcvMessage -> Maybe SharedMsgId -> UTCTime -> (CIContent 'MDRcv, (Text, Maybe MarkdownList)) -> Maybe (CIFile 'MDRcv) -> Maybe CITimed -> Bool -> Map MemberName MsgMention -> CM (ChatItem c 'MDRcv, ChatInfo c, Maybe (ChatRef, ChatItemId, UTCTime))
+saveRcvChatItem' user cd msg@RcvMessage {chatMsgEvent, forwardedByMember} sharedMsgId_ brokerTs (content, (t, ft_)) ciFile itemTimed live mentions = do
+  createdAt <- liftIO getCurrentTime
+  -- Set deleteAt time for received messages immediately (timer starts from send time, not read time)
+  let itemTimedWithDeleteAt = case itemTimed of
+        Just (CITimed ttl _) -> Just (CITimed ttl (Just $ addUTCTime (realToFrac ttl) createdAt))
+        Nothing -> Nothing
+  vr <- chatVersionRange
+```
+
+EXPLANATION:
+- Changed return type to include timer information: `Maybe (ChatRef, ChatItemId, UTCTime)`
+- Added logic to immediately calculate `deleteAt = createdAt + ttl` for received messages
+- This ensures timer starts when message is received, not when read
+
+LOCATION: Lines 2151-2158 (Using the new timer logic)
+
+PREVIOUS CODE:
+```haskell
+    (ciId, quotedItem, itemForwarded) <- createNewRcvChatItem db user cd msg sharedMsgId_ content itemTimed live userMention brokerTs createdAt
+    forM_ ciFile $ \CIFile {fileId} -> updateFileTransferChatItemId db fileId ciId createdAt
+    let ci = mkChatItem_ cd False ciId content (t, ft_) ciFile quotedItem sharedMsgId_ itemForwarded itemTimed live userMention brokerTs forwardedByMember createdAt
+```
+
+CHANGED TO:
+```haskell
+    (ciId, quotedItem, itemForwarded) <- createNewRcvChatItem db user cd msg sharedMsgId_ content itemTimedWithDeleteAt live userMention brokerTs createdAt
+    forM_ ciFile $ \CIFile {fileId} -> updateFileTransferChatItemId db fileId ciId createdAt
+    let ci = mkChatItem_ cd False ciId content (t, ft_) ciFile quotedItem sharedMsgId_ itemForwarded itemTimedWithDeleteAt live userMention brokerTs forwardedByMember createdAt
+```
+
+EXPLANATION:
+- Changed `itemTimed` to `itemTimedWithDeleteAt` to use the timer with deleteAt already set
+
+LOCATION: Lines 2159-2171 (Return timer info)
+
+PREVIOUS CODE:
+```haskell
+    ci' <- case cd of
+      CDGroupRcv g _scope _m | not (null mentions') -> createGroupCIMentions db g ci mentions'
+      _ -> pure ci
+    pure (ci', cInfo')
+```
+
+CHANGED TO:
+```haskell
+    ci' <- case cd of
+      CDGroupRcv g _scope _m | not (null mentions') -> createGroupCIMentions db g ci mentions'
+      _ -> pure ci
+    -- Prepare timer info if needed
+    let timerInfo = case itemTimedWithDeleteAt of
+          Just (CITimed _ (Just deleteAt)) ->
+            let chatRef = case cd of
+                  CDDirectRcv Contact {contactId} -> ChatRef CTDirect contactId Nothing
+                  CDGroupRcv GroupInfo {groupId} scope _m -> ChatRef CTGroup groupId scope
+            in Just (chatRef, ciId, deleteAt)
+          _ -> Nothing
+    pure (ci', cInfo', timerInfo)
+```
+
+EXPLANATION:
+- Added logic to return timer information so caller can start timer threads
+- Creates ChatRef based on chat type (Direct or Group)
+- Returns tuple with timer info: (ChatRef, ChatItemId, deleteAt time)
+
+LOCATION: Lines 2124-2128 (Updated helper functions)
+
+PREVIOUS CODE:
+```haskell
+saveRcvChatItemNoParse :: (ChatTypeI c, ChatTypeQuotable c) => User -> ChatDirection c 'MDRcv -> RcvMessage -> UTCTime -> CIContent 'MDRcv -> CM (ChatItem c 'MDRcv, ChatInfo c)
+saveRcvChatItemNoParse user cd msg brokerTs = saveRcvChatItem user cd msg brokerTs . ciContentNoParse
+
+saveRcvChatItem :: (ChatTypeI c, ChatTypeQuotable c) => User -> ChatDirection c 'MDRcv -> RcvMessage -> UTCTime -> (CIContent 'MDRcv, (Text, Maybe MarkdownList)) -> CM (ChatItem c 'MDRcv, ChatInfo c)
+```
+
+CHANGED TO:
+```haskell
+saveRcvChatItemNoParse :: (ChatTypeI c, ChatTypeQuotable c) => User -> ChatDirection c 'MDRcv -> RcvMessage -> UTCTime -> CIContent 'MDRcv -> CM (ChatItem c 'MDRcv, ChatInfo c)
+saveRcvChatItemNoParse user cd msg brokerTs content = do
+  (ci, cInfo, _) <- saveRcvChatItem user cd msg brokerTs (ciContentNoParse content)
+  pure (ci, cInfo)
+
+saveRcvChatItem :: (ChatTypeI c, ChatTypeQuotable c) => User -> ChatDirection c 'MDRcv -> RcvMessage -> UTCTime -> (CIContent 'MDRcv, (Text, Maybe MarkdownList)) -> CM (ChatItem c 'MDRcv, ChatInfo c, Maybe (ChatRef, ChatItemId, UTCTime))
+```
+
+EXPLANATION:
+- Updated function signatures to handle new return type with timer info
+- Helper functions ignore timer info for compatibility
+
+================================================================================
+FILE 4: src/Simplex/Chat/Library/Commands.hs
+================================================================================
+PURPOSE: Remove timer setting when messages are read (since timer is now set when received)
+
+LOCATION: Lines 1003-1011 (Direct chat read handler)
+
+PREVIOUS CODE:
+```haskell
+  APIChatRead chatRef@(ChatRef cType chatId scope) -> withUser $ \_ -> case cType of
+    CTDirect -> do
+      user <- withFastStore $ \db -> getUserByContactId db chatId
+      ts <- liftIO getCurrentTime
+      timedItems <- withFastStore' $ \db -> do
+        timedItems <- getDirectUnreadTimedItems db user chatId
+        updateDirectChatItemsRead db user chatId
+        setDirectChatItemsDeleteAt db user chatId timedItems ts
+      forM_ timedItems $ \(itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
+      ok user
+```
+
+CHANGED TO:
+```haskell
+  APIChatRead chatRef@(ChatRef cType chatId scope) -> withUser $ \_ -> case cType of
+    CTDirect -> do
+      user <- withFastStore $ \db -> getUserByContactId db chatId
+      ts <- liftIO getCurrentTime
+      timedItems <- withFastStore' $ \db -> do
+        -- Get items that already have deleteAt set (since we set it when received)
+        timedItems <- getDirectTimedItemsWithDeleteAt db user chatId
+        updateDirectChatItemsRead db user chatId
+        pure timedItems
+      forM_ timedItems $ \(itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
+      ok user
+```
+
+EXPLANATION:
+- Removed call to `setDirectChatItemsDeleteAt` since timer is already set when message received
+- Added call to new function `getDirectTimedItemsWithDeleteAt` to get existing timers
+- Start timer threads for messages that already have deleteAt set
+
+LOCATION: Lines 1012-1024 (Group chat read handler)
+
+PREVIOUS CODE:
+```haskell
+    CTGroup -> do
+      (user, gInfo) <- withFastStore $ \db -> do
+        user <- getUserByGroupId db chatId
+        gInfo <- getGroupInfo db vr user chatId
+        pure (user, gInfo)
+      ts <- liftIO getCurrentTime
+      timedItems <- withFastStore' $ \db -> do
+        timedItems <- getGroupUnreadTimedItems db user chatId
+        updateGroupChatItemsRead db user gInfo scope
+        setGroupChatItemsDeleteAt db user chatId timedItems ts
+      forM_ timedItems $ \(itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
+      ok user
+```
+
+CHANGED TO:
+```haskell
+    CTGroup -> do
+      (user, gInfo) <- withFastStore $ \db -> do
+        user <- getUserByGroupId db chatId
+        gInfo <- getGroupInfo db vr user chatId
+        pure (user, gInfo)
+      ts <- liftIO getCurrentTime
+      timedItems <- withFastStore' $ \db -> do
+        -- Get items that already have deleteAt set (since we set it when received)
+        timedItems <- getGroupTimedItemsWithDeleteAt db user chatId
+        updateGroupChatItemsRead db user gInfo scope
+        pure timedItems
+      forM_ timedItems $ \(itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
+      ok user
+```
+
+EXPLANATION:
+- Same changes as direct chat handler
+- Removed timer setting, added getting existing timers
+
+LOCATION: Lines 1037-1039 (Direct chat items read handler)
+
+PREVIOUS CODE:
+```haskell
+      timedItems <- withFastStore' $ \db -> do
+        timedItems <- updateDirectChatItemsReadList db user chatId itemIds
+        setDirectChatItemsDeleteAt db user chatId timedItems =<< getCurrentTime
+```
+
+CHANGED TO:
+```haskell
+      timedItems <- withFastStore' $ \db -> do
+        timedItems <- updateDirectChatItemsReadList db user chatId itemIds
+        -- Timer already set when message was received, no need to set again
+        pure []
+```
+
+EXPLANATION:
+- Removed timer setting for individual items being marked as read
+
+LOCATION: Lines 1046-1049 (Group chat items read handler)
+
+PREVIOUS CODE:
+```haskell
+      (timedItems, gInfo') <- withFastStore $ \db -> do
+        (timedItems, gInfo') <- updateGroupChatItemsReadList db vr user gInfo chatScopeInfo itemIds
+        timedItems' <- liftIO $ setGroupChatItemsDeleteAt db user chatId timedItems =<< getCurrentTime
+        pure (timedItems', gInfo')
+```
+
+CHANGED TO:
+```haskell
+      (timedItems, gInfo') <- withFastStore $ \db -> do
+        (timedItems, gInfo') <- updateGroupChatItemsReadList db vr user gInfo chatScopeInfo itemIds
+        -- Timer already set when message was received, no need to set again
+        pure ([], gInfo')
+```
+
+EXPLANATION:
+- Same change for group items being marked as read
+
+================================================================================
+FILE 5: src/Simplex/Chat/Store/Messages.hs
+================================================================================
+PURPOSE: Add new database query functions to get items with deleteAt already set
+
+LOCATION: Line 81 (Export list)
+
+PREVIOUS CODE:
+```haskell
+    updateDirectChatItemsRead,
+    getDirectUnreadTimedItems,
+    updateDirectChatItemsReadList,
+```
+
+CHANGED TO:
+```haskell
+    updateDirectChatItemsRead,
+    getDirectUnreadTimedItems,
+    getDirectTimedItemsWithDeleteAt,
+    updateDirectChatItemsReadList,
+```
+
+EXPLANATION:
+- Added export for new function `getDirectTimedItemsWithDeleteAt`
+
+LOCATION: Line 85 (Export list for groups)
+
+PREVIOUS CODE:
+```haskell
+    updateGroupChatItemsRead,
+    getGroupUnreadTimedItems,
+    updateGroupChatItemsReadList,
+```
+
+CHANGED TO:
+```haskell
+    updateGroupChatItemsRead,
+    getGroupUnreadTimedItems,
+    getGroupTimedItemsWithDeleteAt,
+    updateGroupChatItemsReadList,
+```
+
+EXPLANATION:
+- Added export for new function `getGroupTimedItemsWithDeleteAt`
+
+LOCATION: Lines 1970-1979 (New function for direct chats)
+
+PREVIOUS CODE:
+```haskell
+    (userId, contactId, CISRcvNew)
+
+updateDirectChatItemsReadList :: DB.Connection -> User -> ContactId -> NonEmpty ChatItemId -> IO [(ChatItemId, Int)]
+```
+
+CHANGED TO:
+```haskell
+    (userId, contactId, CISRcvNew)
+
+getDirectTimedItemsWithDeleteAt :: DB.Connection -> User -> ContactId -> IO [(ChatItemId, UTCTime)]
+getDirectTimedItemsWithDeleteAt db User {userId} contactId =
+  DB.query
+    db
+    [sql|
+      SELECT chat_item_id, timed_delete_at
+      FROM chat_items
+      WHERE user_id = ? AND contact_id = ? AND item_status = ? AND timed_delete_at IS NOT NULL
+    |]
+    (userId, contactId, CISRcvNew)
+
+updateDirectChatItemsReadList :: DB.Connection -> User -> ContactId -> NonEmpty ChatItemId -> IO [(ChatItemId, Int)]
+```
+
+EXPLANATION:
+- Added new function to query messages that already have `timed_delete_at` set
+- Returns (ChatItemId, UTCTime) pairs for messages with timers
+- Used for starting timer threads when chat is opened
+
+LOCATION: Lines 2060-2069 (New function for groups)
+
+PREVIOUS CODE:
+```haskell
+    (userId, groupId, CISRcvNew)
+
+updateGroupChatItemsReadList :: DB.Connection -> VersionRangeChat -> User -> GroupInfo -> Maybe GroupChatScopeInfo -> NonEmpty ChatItemId -> ExceptT StoreError IO ([(ChatItemId, Int)], GroupInfo)
+```
+
+CHANGED TO:
+```haskell
+    (userId, groupId, CISRcvNew)
+
+getGroupTimedItemsWithDeleteAt :: DB.Connection -> User -> GroupId -> IO [(ChatItemId, UTCTime)]
+getGroupTimedItemsWithDeleteAt db User {userId} groupId =
+  DB.query
+    db
+    [sql|
+      SELECT chat_item_id, timed_delete_at
+      FROM chat_items
+      WHERE user_id = ? AND group_id = ? AND item_status = ? AND timed_delete_at IS NOT NULL
+    |]
+    (userId, groupId, CISRcvNew)
+
+updateGroupChatItemsReadList :: DB.Connection -> VersionRangeChat -> User -> GroupInfo -> Maybe GroupChatScopeInfo -> NonEmpty ChatItemId -> ExceptT StoreError IO ([(ChatItemId, Int)], GroupInfo)
+```
+
+EXPLANATION:
+- Same as direct chat function but for group messages
+- Queries group_id instead of contact_id
+
+================================================================================
+FILE 6: src/Simplex/Chat/Library/Subscriber.hs
+================================================================================
+PURPOSE: Update all message reception handlers to start timer threads immediately
+
+LOCATION: Lines 1697-1700 (Direct message reception)
+
+PREVIOUS CODE:
+```haskell
+          (ci, cInfo) <- saveRcvChatItem' user (CDDirectRcv ct) msg sharedMsgId_ brokerTs content ciFile_ timed_ live M.empty
+          reactions <- maybe (pure []) (\sharedMsgId -> withStore' $ \db -> getDirectCIReactions db ct sharedMsgId) sharedMsgId_
+          toView $ CEvtNewChatItems user [AChatItem SCTDirect SMDRcv cInfo ci {reactions}]
+```
+
+CHANGED TO:
+```haskell
+          (ci, cInfo, timerInfo) <- saveRcvChatItem' user (CDDirectRcv ct) msg sharedMsgId_ brokerTs content ciFile_ timed_ live M.empty
+          forM_ timerInfo $ \(chatRef, itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
+          reactions <- maybe (pure []) (\sharedMsgId -> withStore' $ \db -> getDirectCIReactions db ct sharedMsgId) sharedMsgId_
+          toView $ CEvtNewChatItems user [AChatItem SCTDirect SMDRcv cInfo ci {reactions}]
+```
+
+EXPLANATION:
+- Updated to handle new return value with timer info
+- Start timer thread immediately if timer is set
+
+LOCATION: Lines 1780-1782 (Timed direct message)
+
+PREVIOUS CODE:
+```haskell
+        (ci, cInfo) <- saveRcvChatItem' user (CDDirectRcv ct) msg (Just sharedMsgId) brokerTs (content, ts) Nothing timed_ live M.empty
+```
+
+CHANGED TO:
+```haskell
+        (ci, cInfo, timerInfo) <- saveRcvChatItem' user (CDDirectRcv ct) msg (Just sharedMsgId) brokerTs (content, ts) Nothing timed_ live M.empty
+        forM_ timerInfo $ \(chatRef, itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
+```
+
+EXPLANATION:
+- Same update for timed messages
+
+LOCATION: Lines 1918-1922 (Group message helper function)
+
+PREVIOUS CODE:
+```haskell
+        saveRcvCI gInfo' m' scopeInfo = saveRcvChatItem' user (CDGroupRcv gInfo' scopeInfo m') msg sharedMsgId_ brokerTs
+```
+
+CHANGED TO:
+```haskell
+        saveRcvCI gInfo' m' scopeInfo = do
+          (ci, cInfo, timerInfo) <- saveRcvChatItem' user (CDGroupRcv gInfo' scopeInfo m') msg sharedMsgId_ brokerTs
+          forM_ timerInfo $ \(chatRef, itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
+          pure (ci, cInfo)
+```
+
+EXPLANATION:
+- Updated helper function to start timer threads
+
+LOCATION: Lines 1969-1971 (Group message reception)
+
+PREVIOUS CODE:
+```haskell
+            (ci, cInfo) <- saveRcvChatItem' user (CDGroupRcv gInfo' scopeInfo m') msg (Just sharedMsgId) brokerTs (content, ts) Nothing timed_ live mentions'
+```
+
+CHANGED TO:
+```haskell
+            (ci, cInfo, timerInfo) <- saveRcvChatItem' user (CDGroupRcv gInfo' scopeInfo m') msg (Just sharedMsgId) brokerTs (content, ts) Nothing timed_ live mentions'
+            forM_ timerInfo $ \(chatRef, itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
+```
+
+EXPLANATION:
+- Same update for group messages
+
+LOCATION: Multiple locations - Other saveRcvChatItem' calls
+
+All other calls to `saveRcvChatItem'` were updated to handle the new return signature:
+- Lines 2077, 2091, 2575 - Changed to `(ci, cInfo, _)` to ignore timer info
+- Line 3150 - Updated to handle timer info and start threads
+
+EXPLANATION:
+- Some calls don't need timer functionality (like file transfers), so they ignore the timer info
+- Message content calls do start timer threads
+
+================================================================================
+TESTING AND VALIDATION
+================================================================================
+
+BEFORE CHANGES:
+1. New chats had no disappearing messages by default
+2. When user enabled disappearing messages, timer started when recipient opened chat
+3. Message could persist longer than intended TTL if not read immediately
+
+AFTER CHANGES:
+1. All new chats have 1-day disappearing messages enabled by default
+2. Timer starts immediately when message is sent/received
+3. Messages delete exactly after TTL regardless of read status
+4. Database stores actual deleteAt timestamp for each message
+
+EXAMPLE SCENARIO:
+- User sends message at 10:00 AM with 1-day TTL
+- Message will be deleted at 10:00 AM next day
+- Even if recipient doesn't read until 2:00 PM, message still deletes at 10:00 AM next day
+
+================================================================================
+DATABASE CHANGES
+================================================================================
+
+The changes utilize existing database schema:
+- `chat_items.timed_ttl` - stores TTL in seconds
+- `chat_items.timed_delete_at` - stores UTC timestamp when message should be deleted
+
+PREVIOUS BEHAVIOR:
+- `timed_delete_at` was NULL when message was received
+- Set to (read_time + ttl) when chat was opened
+
+NEW BEHAVIOR:
+- `timed_delete_at` is set to (receive_time + ttl) when message is saved
+- No longer changes when chat is read
+
+================================================================================
+COMPATIBILITY NOTES
+================================================================================
+
+1. BACKWARD COMPATIBLE: Existing messages with old timer logic will continue to work
+2. DATABASE: No schema changes required, uses existing columns
+3. API: Core chat API remains unchanged, only internal timing logic modified
+4. PERFORMANCE: Improved performance as timer threads start immediately, no delayed processing
+
+================================================================================
+FILES TO MODIFY FOR SERVER CHANGES (NOT IMPLEMENTED)
+================================================================================
+
+To complete the full requirements, you also need to change default servers:
+
+FILE: src/Simplex/Chat/Operators/Presets.hs
+LINES: 64-76 (enabledSimplexChatSMPServers)
+
+Replace the server list with your custom servers in the format:
+"smp://YOUR_KEY@your-server.domain.com"
+
+================================================================================
+END OF DOCUMENTATION
+================================================================================
