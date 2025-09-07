@@ -5,9 +5,13 @@ module Simplex.Chat.ReadReceipts where
 import Simplex.Chat.Protocol
 import Simplex.Chat.Messages
 import Simplex.Chat.Store
-import Simplex.Chat.Store.Profiles
+import qualified Simplex.Chat.Store.Profiles as P
 import Simplex.Chat.Types
+import Simplex.Chat.Controller (CM)
 import qualified Simplex.Messaging.Agent.Store.DB as DB
+import Control.Monad (when)
+import Control.Monad.IO.Class (liftIO)
+import Data.Time (UTCTime, getCurrentTime)
 import Data.Time (UTCTime, getCurrentTime)
 import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
@@ -19,7 +23,7 @@ newtype ContactReadReceiptSettings = ContactReadReceiptSettings
   deriving (Show)
 
 -- | Send a read receipt for a message
-sendReadReceipt :: ChatMonad m => User -> Contact -> SharedMsgId -> m ()
+sendReadReceipt :: User -> Contact -> SharedMsgId -> CM ()
 sendReadReceipt user contact sharedMsgId = do
   -- Check if user has read receipts enabled for this contact
   userSettings <- getUserReadReceiptSettings user
@@ -37,7 +41,7 @@ sendReadReceipt user contact sharedMsgId = do
       insertReadReceipt db user contact sharedMsgId timestamp
 
 -- | Process an incoming read receipt
-processReadReceipt :: ChatMonad m => Contact -> SharedMsgId -> RcvMessage -> MsgMeta -> m ()
+processReadReceipt :: Contact -> SharedMsgId -> RcvMessage -> MsgMeta -> CM ()
 processReadReceipt contact sharedMsgId _msg _msgMeta = do
   -- TODO: Find the corresponding sent message and update its status to read
   -- This will involve:
@@ -50,14 +54,14 @@ processReadReceipt contact sharedMsgId _msg _msgMeta = do
   updateMessageReadStatus contact sharedMsgId timestamp
 
 -- | Check if read receipt should be sent based on settings
-shouldSendReadReceipt :: UserReadReceiptSettings -> Maybe ContactReadReceiptSettings -> Bool
+shouldSendReadReceipt :: P.UserReadReceiptSettings -> Maybe ContactReadReceiptSettings -> Bool
 shouldSendReadReceipt userSettings contactSettings =
   case contactSettings of
     Just (ContactReadReceiptSettings enabled) -> enabled
-    Nothing -> enableContacts userSettings
+    Nothing -> P.enableContacts userSettings
 
 -- | Update message read status in database
-updateMessageReadStatus :: ChatMonad m => Contact -> SharedMsgId -> UTCTime -> m ()
+updateMessageReadStatus :: Contact -> SharedMsgId -> UTCTime -> CM ()
 updateMessageReadStatus contact sharedMsgId timestamp = do
   withStore $ \db -> do
     -- TODO: Find and update the message status
@@ -65,22 +69,24 @@ updateMessageReadStatus contact sharedMsgId timestamp = do
     insertReadReceipt db undefined undefined sharedMsgId timestamp
 
 -- | Insert read receipt record
-insertReadReceipt :: ChatMonad m => DB.Connection -> User -> Contact -> SharedMsgId -> UTCTime -> m ()
+insertReadReceipt :: DB.Connection -> User -> Contact -> SharedMsgId -> UTCTime -> CM ()
 insertReadReceipt db user contact@Contact{contactId} sharedMsgId timestamp = 
   liftIO $ DB.execute db
     "INSERT INTO read_receipts (user_id, contact_id, shared_msg_id, read_at) VALUES (?,?,?,?)"
     (userId user, contactId, sharedMsgId, timestamp)
 
 -- | Get user's read receipt settings
-getUserReadReceiptSettings :: ChatMonad m => User -> m UserReadReceiptSettings
+getUserReadReceiptSettings :: User -> CM P.UserReadReceiptSettings
 getUserReadReceiptSettings _user = do
   -- TODO: Implement actual database lookup
   -- For now, return default settings
-  return $ UserReadReceiptSettings { enableContacts = True, clearOverrides = False }
+  let defaultSettings = P.UserReadReceiptSettings { P.enableContacts = True, P.clearOverrides = False }
+  return defaultSettings
 
 -- | Get contact-specific read receipt settings
-getContactReadReceiptSettings :: ChatMonad m => User -> Contact -> m (Maybe ContactReadReceiptSettings)
+getContactReadReceiptSettings :: User -> Contact -> CM (Maybe ContactReadReceiptSettings)
 getContactReadReceiptSettings _user _contact = do
   -- TODO: Implement actual database lookup for contact-specific settings
   -- For now, return Nothing (use user default)
+  return Nothing
   return Nothing
