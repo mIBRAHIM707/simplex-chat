@@ -5,7 +5,6 @@ module Simplex.Chat.ReadReceipts where
 import Simplex.Chat.Protocol
 import Simplex.Chat.Messages
 import Simplex.Chat.Store
-import Simplex.Chat.Store.Messages
 import Simplex.Chat.Store.Profiles
 import Simplex.Chat.Types
 import qualified Simplex.Messaging.Agent.Store.DB as DB

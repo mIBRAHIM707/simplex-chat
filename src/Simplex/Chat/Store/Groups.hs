@@ -341,7 +341,7 @@ createNewGroup db vr gVar user@User {userId} groupProfile incognitoProfile = Exc
       insertedRowId db
     memberId <- liftIO $ encodedRandomBytes gVar 12
     membership <- createContactMemberInv_ db user groupId Nothing user (MemberIdRole (MemberId memberId) GROwner) GCUserMember GSMemCreator IBUser customUserProfileId currentTs vr
-    let chatSettings = ChatSettings {enableNtfs = MFAll, sendRcpts = Nothing, favorite = False}
+    let chatSettings = ChatSettings {enableNtfs = MFAll, sendRcpts = Nothing, favorite = False, sendReadRcptsContacts = RSCAll}
     pure
       GroupInfo
         { groupId,
@@ -411,7 +411,7 @@ createGroupInvitation db vr user@User {userId} contact@Contact {contactId, activ
           let hostVRange = adjustedMemberVRange vr peerChatVRange
           GroupMember {groupMemberId} <- createContactMemberInv_ db user groupId Nothing contact fromMember GCHostMember GSMemInvited IBUnknown Nothing currentTs hostVRange
           membership <- createContactMemberInv_ db user groupId (Just groupMemberId) user invitedMember GCUserMember GSMemInvited (IBContact contactId) incognitoProfileId currentTs vr
-          let chatSettings = ChatSettings {enableNtfs = MFAll, sendRcpts = Nothing, favorite = False}
+          let chatSettings = ChatSettings {enableNtfs = MFAll, sendRcpts = Nothing, favorite = False, sendReadRcptsContacts = RSCAll}
           pure
             ( GroupInfo
                 { groupId,
