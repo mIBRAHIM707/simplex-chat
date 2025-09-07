@@ -36,7 +36,7 @@ import Data.Maybe (catMaybes, fromMaybe, isJust, isNothing, mapMaybe)
 import Data.Text (Text)
 import qualified Data.Text as T
 import Data.Text.Encoding (decodeLatin1)
-import Data.Time.Clock (UTCTime, diffUTCTime)
+import Data.Time.Clock (UTCTime, diffUTCTime, getCurrentTime)
 import qualified Data.UUID as UUID
 import qualified Data.UUID.V4 as V4
 import Data.Word (Word32)
@@ -490,7 +490,7 @@ processAgentMessageConn vr user@User {userId} corrId agentConnId agentMessage = 
                 XMsgUpdate sharedMsgId mContent _ ttl live -> messageUpdate ct'' sharedMsgId mContent msg msgMeta ttl live
                 XMsgDel sharedMsgId _ -> messageDelete ct'' sharedMsgId msg msgMeta
                 XMsgReact sharedMsgId _ reaction add -> directMsgReaction ct'' sharedMsgId reaction add msg msgMeta
-                XMsgRead sharedMsgId -> processReadReceipt ct'' sharedMsgId msg msgMeta
+                    XMsgRead sharedMsgId -> directMsgRead ct'' sharedMsgId msg msgMeta
                 -- TODO discontinue XFile
                 XFile fInv -> processFileInvitation' ct'' fInv msg msgMeta
                 XFileCancel sharedMsgId -> xFileCancel ct'' sharedMsgId
@@ -2789,11 +2789,32 @@ processAgentMessageConn vr user@User {userId} corrId agentConnId agentMessage = 
       where
         updateItem :: CChatItem 'CTDirect -> ExceptT StoreError IO (Maybe (ChatItem 'CTDirect 'MDSnd))
         updateItem = \case
-          (CChatItem SMDSnd ChatItem {meta = CIMeta {itemStatus = CISSndRcvd _ _}}) -> pure Nothing
+          (CChatItem SMDSnd ChatItem {meta = CIMeta {itemId, itemStatus = CISSndRcvd _ _}})
+            | newStatus == CISSndRead -> Just <$> updateDirectChatItemStatus db user ct itemId newStatus
+            | otherwise -> pure Nothing
           (CChatItem SMDSnd ChatItem {meta = CIMeta {itemId, itemStatus}})
             | itemStatus == newStatus -> pure Nothing
             | otherwise -> Just <$> updateDirectChatItemStatus db user ct itemId newStatus
           _ -> pure Nothing
+
+    -- | Handle read receipt for a direct message identified by shared message id.
+    directMsgRead :: Contact -> SharedMsgId -> RcvMessage -> MsgMeta -> CM ()
+    directMsgRead ct sharedMsgId _ _ = do
+      let Contact {contactId} = ct
+      mUpdated <- withStore $ \db -> runExceptT (getDirectChatItemBySharedMsgId db user contactId sharedMsgId) >>= \case
+        Left _ -> pure Nothing
+        Right (CChatItem SMDSnd ci@ChatItem {meta = cimeta@CIMeta {itemStatus}}) -> case itemStatus of
+          CISSndRead -> pure Nothing
+          CISSndRcvd _ _ -> liftIO $ do
+            currentTs <- getCurrentTime
+            DB.execute db "UPDATE chat_items SET item_status = ?, read_at = ?, updated_at = ? WHERE chat_item_id = ?" (CISSndRead, currentTs, currentTs, chatItemId' ci)
+            DB.execute db "UPDATE msg_deliveries SET delivery_status = ?, updated_at = ? WHERE message_id IN (SELECT message_id FROM chat_item_messages WHERE chat_item_id = ?)" (MDSSndRead, currentTs, chatItemId' ci)
+            pure (Just ci {meta = cimeta {itemStatus = CISSndRead}})
+          _ -> pure Nothing
+        Right _ -> pure Nothing
+      forM_ mUpdated $ \ci' -> do
+        let aci = AChatItem SCTDirect SMDSnd (DirectChat ct) ci'
+        toView $ CEvtChatItemsStatusesUpdated user [aci]
 
     updateGroupMemSndStatus' :: DB.Connection -> ChatItemId -> GroupMemberId -> GroupSndStatus -> IO Bool
     updateGroupMemSndStatus' db itemId groupMemberId newStatus =
