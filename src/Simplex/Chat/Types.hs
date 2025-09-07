@@ -1883,6 +1883,8 @@ $(JQ.deriveJSON defaultJSON ''GroupMember)
 
 $(JQ.deriveJSON (enumJSON $ dropPrefix "MF") ''MsgFilter)
 
+$(JQ.deriveJSON (enumJSON $ dropPrefix "RSC") ''ReadReceiptStatus)
+
 $(JQ.deriveJSON defaultJSON ''ChatSettings)
 
 $(JQ.deriveJSON (enumJSON $ dropPrefix "BC") ''BusinessChatType)
