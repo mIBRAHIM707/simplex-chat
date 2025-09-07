@@ -153,7 +153,7 @@ createUserRecordAt db (AgentUserId auId) Profile {displayName, fullName, image, 
       (profileId, displayName, userId, BI True, currentTs, currentTs, currentTs)
     contactId <- insertedRowId db
     DB.execute db "UPDATE users SET contact_id = ? WHERE user_id = ?" (contactId, userId)
-    pure $ toUser $ (userId, auId, contactId, profileId, BI activeUser, order, displayName, fullName, image, Nothing, userPreferences) :. (BI showNtfs, BI sendRcptsContacts, BI sendRcptsSmallGroups, Nothing, Nothing, Nothing, Nothing)
+    pure $ toUser $ (userId, auId, contactId, profileId, BI activeUser, order, displayName, fullName, image, Nothing, userPreferences) :. (BI showNtfs, BI sendRcptsContacts, BI sendRcptsSmallGroups, BI False, Nothing, Nothing, Nothing, Nothing)
 
 -- TODO [mentions]
 getUsersInfo :: DB.Connection -> IO [UserInfo]
