@@ -12,9 +12,6 @@ import qualified Simplex.Messaging.Agent.Store.DB as DB
 import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 import Data.Time (UTCTime, getCurrentTime)
-import Data.Time (UTCTime, getCurrentTime)
-import Control.Monad (when)
-import Control.Monad.IO.Class (liftIO)
 
 -- Contact-specific read receipt settings
 newtype ContactReadReceiptSettings = ContactReadReceiptSettings
