@@ -388,8 +388,10 @@ processChatCommand' vr = \case
     -- TODO: implement contact-specific read receipt settings
     -- For now, just return success as a placeholder
     ok user
-  SetContactReadReceipts contactName settings -> withContactName contactName $ \contactId -> 
-    withUser $ \User {userId} -> processChatCommand $ APISetContactReadReceipts userId contactId settings
+  SetContactReadReceipts contactName settings -> 
+    withUser $ \User {userId} -> 
+      withContactName contactName $ \contactId -> 
+        APISetContactReadReceipts userId contactId settings
   APIHideUser userId' (UserPwd viewPwd) -> withUser $ \user -> do
     user' <- privateGetUser userId'
     case viewPwdHash user' of
