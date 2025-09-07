@@ -2801,7 +2801,7 @@ processAgentMessageConn vr user@User {userId} corrId agentConnId agentMessage = 
     directMsgRead :: Contact -> SharedMsgId -> RcvMessage -> MsgMeta -> CM ()
     directMsgRead ct sharedMsgId _ _ = do
       let Contact {contactId} = ct
-      mUpdated <- withStore $ \db -> runExceptT (getDirectChatItemBySharedMsgId db user contactId sharedMsgId) >>= \case
+      mUpdated <- withStore $ \db -> getDirectChatItemBySharedMsgId db user contactId sharedMsgId >>= \case
         Left _ -> pure Nothing
         Right (CChatItem SMDSnd ci@ChatItem {meta = cimeta@CIMeta {itemStatus}}) -> case itemStatus of
           CISSndRead -> pure Nothing
