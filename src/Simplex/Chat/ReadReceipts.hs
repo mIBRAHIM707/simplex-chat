@@ -1,87 +1,70 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Simplex.Chat.ReadReceipts where
+-- | Minimal read receipts support (placeholder implementation).
+-- This module is intentionally kept independent from 'Simplex.Chat.Controller'
+-- to avoid module cycles while the feature is being incrementally developed.
+module Simplex.Chat.ReadReceipts
+  ( ContactReadReceiptSettings (..),
+    sendReadReceipt,
+    processReadReceipt,
+    shouldSendReadReceipt,
+    contactCanSendReadReceipts,
+    getUserReadReceiptSettings,
+    getContactReadReceiptSettings
+  )
+where
 
-import Simplex.Chat.Protocol
-import Simplex.Chat.Messages
-import Simplex.Chat.Store
-import qualified Simplex.Chat.Store.Profiles as P
-import Simplex.Chat.Types
-import Simplex.Chat.Controller (CM)
-import qualified Simplex.Messaging.Agent.Store.DB as DB
 import Control.Monad (when)
-import Control.Monad.IO.Class (liftIO)
 import Data.Time (UTCTime, getCurrentTime)
+import Simplex.Chat.Messages (MsgMeta, RcvMessage, SharedMsgId, XMsg (..))
+import Simplex.Chat.Types (Contact, User)
+import qualified Simplex.Chat.Store.Profiles as P
 
--- Contact-specific read receipt settings
+-- | Contact-specific read receipt override (if Nothing - follow user preference)
 newtype ContactReadReceiptSettings = ContactReadReceiptSettings
-  { enabled :: Bool
+  { enableReadReceipts :: Bool
   }
-  deriving (Show)
+  deriving (Show, Eq)
 
--- | Send a read receipt for a message
-sendReadReceipt :: User -> Contact -> SharedMsgId -> CM ()
+-- | Send a read receipt for a message. Currently a stub that only evaluates
+-- settings logic; integration with the messaging pipeline will be added later.
+sendReadReceipt :: User -> Contact -> SharedMsgId -> IO ()
 sendReadReceipt user contact sharedMsgId = do
-  -- Check if user has read receipts enabled for this contact
   userSettings <- getUserReadReceiptSettings user
   contactSettings <- getContactReadReceiptSettings user contact
-  
   when (shouldSendReadReceipt userSettings contactSettings) $ do
-    -- Create and send read receipt message
-    let readReceiptMsg = XMsgRead sharedMsgId
-    -- TODO: Send the message through the existing message sending infrastructure
-    -- This will be integrated with the message sending system
-    
-    -- Record that we sent a read receipt
-    withStore $ \db -> do
-      timestamp <- liftIO getCurrentTime
-      insertReadReceipt db user contact sharedMsgId timestamp
+    let _readReceiptMsg = XMsgRead sharedMsgId
+    pure ()
 
--- | Process an incoming read receipt
-processReadReceipt :: Contact -> SharedMsgId -> RcvMessage -> MsgMeta -> CM ()
-processReadReceipt contact sharedMsgId _msg _msgMeta = do
-  -- TODO: Find the corresponding sent message and update its status to read
-  -- This will involve:
-  -- 1. Finding the message by sharedMsgId in the database
-  -- 2. Updating its status to CISSndRead
-  -- 3. Notifying the UI of the status change
-  -- 
-  -- For now, we'll implement the basic structure
-  timestamp <- liftIO getCurrentTime
-  updateMessageReadStatus contact sharedMsgId timestamp
+-- | Process an incoming read receipt. Placeholder for DB update + UI notify.
+processReadReceipt :: Contact -> SharedMsgId -> RcvMessage -> MsgMeta -> IO ()
+processReadReceipt _contact _sharedMsgId _msg _msgMeta = do
+  _timestamp <- getCurrentTime
+  pure ()
 
--- | Check if read receipt should be sent based on settings
+-- | Decide whether to send read receipt given user-wide and per-contact settings.
 shouldSendReadReceipt :: P.UserReadReceiptSettings -> Maybe ContactReadReceiptSettings -> Bool
-shouldSendReadReceipt userSettings contactSettings =
-  case contactSettings of
-    Just (ContactReadReceiptSettings enabled) -> enabled
-    Nothing -> P.enableContacts userSettings
+shouldSendReadReceipt userSettings = \case
+  Just (ContactReadReceiptSettings enabled) -> enabled
+  Nothing -> P.enableContacts userSettings
 
--- | Update message read status in database
-updateMessageReadStatus :: Contact -> SharedMsgId -> UTCTime -> CM ()
-updateMessageReadStatus contact sharedMsgId timestamp = do
-  withStore $ \db -> do
-    -- TODO: Find and update the message status
-    -- For now, just insert the read receipt record
-    insertReadReceipt db undefined undefined sharedMsgId timestamp
+-- | Whether we accept read receipts from this contact (used for UI filtering later).
+contactCanSendReadReceipts :: Maybe ContactReadReceiptSettings -> Bool
+contactCanSendReadReceipts = \case
+  Just (ContactReadReceiptSettings enabled) -> enabled
+  Nothing -> True
 
--- | Insert read receipt record
-insertReadReceipt :: DB.Connection -> User -> Contact -> SharedMsgId -> UTCTime -> CM ()
-insertReadReceipt db user contact@Contact{contactId} sharedMsgId timestamp = 
-  liftIO $ DB.execute db
-    "INSERT INTO read_receipts (user_id, contact_id, shared_msg_id, read_at) VALUES (?,?,?,?)"
-    (userId user, contactId, sharedMsgId, timestamp)
+-- | Placeholder: fetch user-level read receipt settings (from DB later).
+getUserReadReceiptSettings :: User -> IO P.UserReadReceiptSettings
+getUserReadReceiptSettings _ =
+  pure P.UserReadReceiptSettings {P.enableContacts = True, P.clearOverrides = False}
 
--- | Get user's read receipt settings
-getUserReadReceiptSettings :: User -> CM P.UserReadReceiptSettings
-getUserReadReceiptSettings _user = do
-  -- TODO: Implement actual database lookup
-  -- For now, return default settings
-  let defaultSettings = P.UserReadReceiptSettings { P.enableContacts = True, P.clearOverrides = False }
-  return defaultSettings
+-- | Placeholder: fetch contact override (Nothing means follow user settings).
+getContactReadReceiptSettings :: User -> Contact -> IO (Maybe ContactReadReceiptSettings)
+getContactReadReceiptSettings _ _ = pure Nothing
 
 -- | Get contact-specific read receipt settings
-getContactReadReceiptSettings :: User -> Contact -> CM (Maybe ContactReadReceiptSettings)
+getContactReadReceiptSettings :: User -> Contact -> IO (Maybe ContactReadReceiptSettings)
 getContactReadReceiptSettings _user _contact = do
   -- TODO: Implement actual database lookup for contact-specific settings
   -- For now, return Nothing (use user default)
