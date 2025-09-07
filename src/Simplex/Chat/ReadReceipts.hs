@@ -16,7 +16,9 @@ where
 
 import Control.Monad (when)
 import Data.Time (UTCTime, getCurrentTime)
-import Simplex.Chat.Messages (MsgMeta, RcvMessage, SharedMsgId, XMsg (..))
+-- Use Protocol for SharedMsgId and XMsg constructor; Messages does not export them directly.
+import Simplex.Chat.Protocol (SharedMsgId, ChatMsgEvent (XMsgRead), MsgMeta)
+import Simplex.Chat.Messages (RcvMessage)
 import Simplex.Chat.Types (Contact, User)
 import qualified Simplex.Chat.Store.Profiles as P
 
