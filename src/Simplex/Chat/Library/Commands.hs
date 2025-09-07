@@ -376,6 +376,19 @@ processChatCommand' vr = \case
     withFastStore' $ \db -> updateUserGroupReceipts db user' settings
     ok user
   SetUserGroupReceipts settings -> withUser $ \User {userId} -> processChatCommand $ APISetUserGroupReceipts userId settings
+  APISetUserReadReceipts userId' settings -> withUser $ \user -> do
+    user' <- privateGetUser userId'
+    validateUserPassword user user' Nothing
+    withFastStore' $ \db -> updateUserReadReceiptSettings db user' settings
+    ok user
+  SetUserReadReceipts settings -> withUser $ \User {userId} -> processChatCommand $ APISetUserReadReceipts userId settings
+  APISetContactReadReceipts userId' contactId settings -> withUser $ \user -> do
+    user' <- privateGetUser userId'
+    validateUserPassword user user' Nothing
+    -- TODO: implement contact-specific read receipt settings
+    -- For now, just return success as a placeholder
+    ok user
+  SetContactReadReceipts contactId settings -> withUser $ \User {userId} -> processChatCommand $ APISetContactReadReceipts userId contactId settings
   APIHideUser userId' (UserPwd viewPwd) -> withUser $ \user -> do
     user' <- privateGetUser userId'
     case viewPwdHash user' of
