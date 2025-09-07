@@ -44,13 +44,13 @@ processReadReceipt _contact _sharedMsgId _msg _msgMeta = do
 
 -- | Decide whether to send read receipt given user-wide and per-contact settings.
 shouldSendReadReceipt :: P.UserReadReceiptSettings -> Maybe ContactReadReceiptSettings -> Bool
-shouldSendReadReceipt userSettings = \case
+shouldSendReadReceipt userSettings m = case m of
   Just (ContactReadReceiptSettings enabled) -> enabled
   Nothing -> P.enableContacts userSettings
 
 -- | Whether we accept read receipts from this contact (used for UI filtering later).
 contactCanSendReadReceipts :: Maybe ContactReadReceiptSettings -> Bool
-contactCanSendReadReceipts = \case
+contactCanSendReadReceipts m = case m of
   Just (ContactReadReceiptSettings enabled) -> enabled
   Nothing -> True
 
@@ -62,11 +62,3 @@ getUserReadReceiptSettings _ =
 -- | Placeholder: fetch contact override (Nothing means follow user settings).
 getContactReadReceiptSettings :: User -> Contact -> IO (Maybe ContactReadReceiptSettings)
 getContactReadReceiptSettings _ _ = pure Nothing
-
--- | Get contact-specific read receipt settings
-getContactReadReceiptSettings :: User -> Contact -> IO (Maybe ContactReadReceiptSettings)
-getContactReadReceiptSettings _user _contact = do
-  -- TODO: Implement actual database lookup for contact-specific settings
-  -- For now, return Nothing (use user default)
-  return Nothing
-  return Nothing
