@@ -12,6 +12,12 @@ import Data.Time (UTCTime, getCurrentTime)
 import Control.Monad (when)
 import Control.Monad.IO.Class (liftIO)
 
+-- Contact-specific read receipt settings
+newtype ContactReadReceiptSettings = ContactReadReceiptSettings
+  { enabled :: Bool
+  }
+  deriving (Show)
+
 -- | Send a read receipt for a message
 sendReadReceipt :: ChatMonad m => User -> Contact -> SharedMsgId -> m ()
 sendReadReceipt user contact sharedMsgId = do
@@ -48,7 +54,7 @@ shouldSendReadReceipt :: UserReadReceiptSettings -> Maybe ContactReadReceiptSett
 shouldSendReadReceipt userSettings contactSettings =
   case contactSettings of
     Just (ContactReadReceiptSettings enabled) -> enabled
-    Nothing -> userReadReceiptsContacts userSettings
+    Nothing -> enableContacts userSettings
 
 -- | Update message read status in database
 updateMessageReadStatus :: ChatMonad m => Contact -> SharedMsgId -> UTCTime -> m ()
@@ -60,7 +66,21 @@ updateMessageReadStatus contact sharedMsgId timestamp = do
 
 -- | Insert read receipt record
 insertReadReceipt :: ChatMonad m => DB.Connection -> User -> Contact -> SharedMsgId -> UTCTime -> m ()
-insertReadReceipt db user contact sharedMsgId timestamp = 
+insertReadReceipt db user contact@Contact{contactId} sharedMsgId timestamp = 
   liftIO $ DB.execute db
     "INSERT INTO read_receipts (user_id, contact_id, shared_msg_id, read_at) VALUES (?,?,?,?)"
-    (userId user, contactId contact, sharedMsgId, timestamp)
+    (userId user, contactId, sharedMsgId, timestamp)
+
+-- | Get user's read receipt settings
+getUserReadReceiptSettings :: ChatMonad m => User -> m UserReadReceiptSettings
+getUserReadReceiptSettings _user = do
+  -- TODO: Implement actual database lookup
+  -- For now, return default settings
+  return $ UserReadReceiptSettings { enableContacts = True, clearOverrides = False }
+
+-- | Get contact-specific read receipt settings
+getContactReadReceiptSettings :: ChatMonad m => User -> Contact -> m (Maybe ContactReadReceiptSettings)
+getContactReadReceiptSettings _user _contact = do
+  -- TODO: Implement actual database lookup for contact-specific settings
+  -- For now, return Nothing (use user default)
+  return Nothing
