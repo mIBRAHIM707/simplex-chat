@@ -490,7 +490,7 @@ processAgentMessageConn vr user@User {userId} corrId agentConnId agentMessage = 
                 XMsgUpdate sharedMsgId mContent _ ttl live -> messageUpdate ct'' sharedMsgId mContent msg msgMeta ttl live
                 XMsgDel sharedMsgId _ -> messageDelete ct'' sharedMsgId msg msgMeta
                 XMsgReact sharedMsgId _ reaction add -> directMsgReaction ct'' sharedMsgId reaction add msg msgMeta
-                    XMsgRead sharedMsgId -> directMsgRead ct'' sharedMsgId msg msgMeta
+                XMsgRead sharedMsgId -> directMsgRead ct'' sharedMsgId msg msgMeta
                 -- TODO discontinue XFile
                 XFile fInv -> processFileInvitation' ct'' fInv msg msgMeta
                 XFileCancel sharedMsgId -> xFileCancel ct'' sharedMsgId
