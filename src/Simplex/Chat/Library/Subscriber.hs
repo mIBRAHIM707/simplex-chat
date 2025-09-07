@@ -2802,10 +2802,8 @@ processAgentMessageConn vr user@User {userId} corrId agentConnId agentMessage = 
     directMsgRead ct sharedMsgId _ _ = do
       let Contact {contactId} = ct
       mUpdated <- withStore $ \db -> do
-        result <- runExceptT $ getDirectChatItemBySharedMsgId db user contactId sharedMsgId
-        case result of
-          Left _ -> pure Nothing
-          Right (CChatItem SMDSnd ci@ChatItem {meta = cimeta@CIMeta {itemStatus}}) -> case itemStatus of
+        getDirectChatItemBySharedMsgId db user contactId sharedMsgId >>= \case
+          CChatItem SMDSnd ci@ChatItem {meta = cimeta@CIMeta {itemStatus}} -> case itemStatus of
             CISSndRead -> pure Nothing
             CISSndRcvd _ _ -> liftIO $ do
               currentTs <- getCurrentTime
@@ -2813,7 +2811,8 @@ processAgentMessageConn vr user@User {userId} corrId agentConnId agentMessage = 
               DB.execute db "UPDATE msg_deliveries SET delivery_status = ?, updated_at = ? WHERE message_id IN (SELECT message_id FROM chat_item_messages WHERE chat_item_id = ?)" (MDSSndRead, currentTs, chatItemId' ci)
               pure (Just ci {meta = cimeta {itemStatus = CISSndRead}})
             _ -> pure Nothing
-          Right _ -> pure Nothing
+          _ -> pure Nothing
+        `catchError` \_ -> pure Nothing
       forM_ mUpdated $ \ci' -> do
         let aci = AChatItem SCTDirect SMDSnd (DirectChat ct) ci'
         toView $ CEvtChatItemsStatusesUpdated user [aci]
