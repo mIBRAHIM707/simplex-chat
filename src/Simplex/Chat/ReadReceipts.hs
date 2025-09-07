@@ -60,7 +60,7 @@ contactCanSendReadReceipts m = case m of
 -- | Placeholder: fetch user-level read receipt settings (from DB later).
 getUserReadReceiptSettings :: User -> IO P.UserReadReceiptSettings
 getUserReadReceiptSettings _ =
-  pure P.UserReadReceiptSettings {P.enableContacts = True, P.clearOverrides = False}
+  pure $ P.UserReadReceiptSettings True False
 
 -- | Placeholder: fetch contact override (Nothing means follow user settings).
 getContactReadReceiptSettings :: User -> Contact -> IO (Maybe ContactReadReceiptSettings)
