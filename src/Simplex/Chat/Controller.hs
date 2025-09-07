@@ -59,7 +59,6 @@ import Simplex.Chat.Messages
 import Simplex.Chat.Messages.CIContent
 import Simplex.Chat.Operators
 import Simplex.Chat.Protocol
-import Simplex.Chat.ReadReceipts
 import Simplex.Chat.Remote.AppVersion
 import Simplex.Chat.Remote.Types
 import Simplex.Chat.Stats (PresentedServersSummary)
