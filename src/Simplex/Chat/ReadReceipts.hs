@@ -16,10 +16,11 @@ where
 
 import Control.Monad (when)
 import Data.Time (UTCTime, getCurrentTime)
--- Use Protocol for SharedMsgId and XMsg constructor; Messages does not export them directly.
-import Simplex.Chat.Protocol (SharedMsgId, ChatMsgEvent (XMsgRead), MsgMeta)
+-- Use Protocol for SharedMsgId and XMsg constructor; MsgMeta comes from Agent Protocol
+import Simplex.Chat.Protocol (SharedMsgId, ChatMsgEvent (XMsgRead))
 import Simplex.Chat.Messages (RcvMessage)
 import Simplex.Chat.Types (Contact, User)
+import Simplex.Messaging.Agent.Protocol (MsgMeta)
 import qualified Simplex.Chat.Store.Profiles as P
 
 -- | Contact-specific read receipt override (if Nothing - follow user preference)
