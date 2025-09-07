@@ -459,12 +459,16 @@ contactAndGroupIds = \case
   CGContact Contact {contactId} -> (Just contactId, Nothing)
   CGGroup GroupInfo {groupId} _ -> (Nothing, Just groupId)
 
+data ReadReceiptStatus = RSCAll | RSCNone
+  deriving (Eq, Show)
+
 -- TODO when more settings are added we should create another type to allow partial setting updates (with all Maybe properties)
 data ChatSettings = ChatSettings
   { enableNtfs :: MsgFilter,
     sendRcpts :: Maybe Bool,
     sendReadRcpts :: Maybe Bool,
-    favorite :: Bool
+    favorite :: Bool,
+    sendReadRcptsContacts :: ReadReceiptStatus
   }
   deriving (Eq, Show)
 
@@ -474,7 +478,8 @@ defaultChatSettings =
     { enableNtfs = MFAll,
       sendRcpts = Nothing,
       sendReadRcpts = Nothing,
-      favorite = False
+      favorite = False,
+      sendReadRcptsContacts = RSCAll
     }
 
 chatHasNtfs :: ChatSettings -> Bool
@@ -495,6 +500,21 @@ msgFilterIntP = \case
   1 -> Just MFAll
   2 -> Just MFMentions
   _ -> Just MFAll
+
+readReceiptStatusInt :: ReadReceiptStatus -> Int
+readReceiptStatusInt = \case
+  RSCAll -> 0
+  RSCNone -> 1
+
+readReceiptStatusIntP :: Int64 -> Maybe ReadReceiptStatus
+readReceiptStatusIntP = \case
+  0 -> Just RSCAll
+  1 -> Just RSCNone
+  _ -> Just RSCAll
+
+instance FromField ReadReceiptStatus where fromField = fromIntField_ readReceiptStatusIntP
+
+instance ToField ReadReceiptStatus where toField = toField . readReceiptStatusInt
 
 fromIntField_ :: Typeable a => (Int64 -> Maybe a) -> FieldParser a
 #if defined(dbPostgres)
