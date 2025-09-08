@@ -2818,7 +2818,7 @@ getAChatItem db vr user chatRef itemId = do
     _ -> throwError $ SEChatItemNotFound itemId
   liftIO $ getACIReactions db aci
 
-getAChatItemBySharedMsgId :: ChatTypeQuotable c => DB.Connection -> User -> ChatDirection c 'MDRcv -> SharedMsgId -> ExceptT StoreError IO AChatItem
+getAChatItemBySharedMsgId :: DB.Connection -> User -> ChatDirection c 'MDRcv -> SharedMsgId -> ExceptT StoreError IO AChatItem
 getAChatItemBySharedMsgId db user cd sharedMsgId = case cd of
   CDDirectRcv ct@Contact {contactId} -> do
     (CChatItem msgDir ci) <- getDirectChatItemBySharedMsgId db user contactId sharedMsgId
