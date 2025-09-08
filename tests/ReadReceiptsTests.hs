@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module ReadReceiptsTests (readReceiptsTests) where
 
+import ChatClient
 import ChatTests.DBUtils (TestParams)
 import ChatTests.Utils
 import Test.Hspec hiding (it)
