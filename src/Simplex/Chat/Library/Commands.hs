@@ -1052,7 +1052,7 @@ processChatCommand' vr = \case
           _ -> False
       -- Gather shared message ids for the specific items that are currently unread
       unreadSharedIds <- if sendRR
-  then withFastStore' $ \db -> fmap catMaybes $ forM (L.toList itemIds) $ \itId -> do
+        then withFastStore' $ \db -> fmap catMaybes $ forM (L.toList itemIds) $ \itId -> do
           rs <- DB.query db
             [sql|SELECT shared_msg_id FROM chat_items WHERE user_id = ? AND contact_id = ? AND chat_item_id = ? AND item_status = ? AND shared_msg_id IS NOT NULL|]
             (userId user, chatId, itId, CISRcvNew)
