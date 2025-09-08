@@ -10,9 +10,10 @@ import Test.Hspec hiding (it)
 -- Confirms that marking a direct chat as read returns ok after a message is received.
 readReceiptsTests :: SpecWith TestParams
 readReceiptsTests = do
-  let spec = it "marks direct chat read and returns ok" testReadReceiptDirect
-  describe "Read receipts" spec
-  describe "ReadReceipts" spec
+  describe "Read receipts" $ do
+    it "marks direct chat read and returns ok" testReadReceiptDirect
+  describe "ReadReceipts" $ do
+    it "marks direct chat read and returns ok" testReadReceiptDirect
 
 testReadReceiptDirect :: TestParams -> IO ()
 testReadReceiptDirect =
