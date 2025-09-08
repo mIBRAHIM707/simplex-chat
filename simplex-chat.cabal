@@ -59,6 +59,7 @@ library
       Simplex.Chat.Options
       Simplex.Chat.Options.DB
       Simplex.Chat.ProfileGenerator
+  Simplex.Chat.ReadReceipts
       Simplex.Chat.Protocol
       Simplex.Chat.Remote
       Simplex.Chat.Remote.AppVersion
@@ -566,6 +567,7 @@ test-suite read-receipts-test
       ReadReceiptsTests
       ChatClient
       ChatTests.DBUtils
+      ChatTests.DBUtils.SQLite
       ChatTests.Utils
       Paths_simplex_chat
   hs-source-dirs: tests
@@ -573,6 +575,7 @@ test-suite read-receipts-test
   build-depends:
       base >=4.7 && <5
     , simplex-chat
+    , simplexmq >=6.3
     , async ==2.2.*
     , stm ==2.5.*
     , time ==1.12.*
