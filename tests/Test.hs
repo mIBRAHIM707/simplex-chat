@@ -17,6 +17,7 @@ import MessageBatching
 import ProtocolTests
 import OperatorTests
 import RandomServers
+import ReadReceiptsTests (readReceiptsTests)
 import RemoteTests
 import Test.Hspec hiding (it)
 import UnliftIO.Temporary (withTempDirectory)
@@ -68,6 +69,7 @@ main = do
           describe "Mobile API Tests" mobileTests
 #endif
           describe "SimpleX chat client" chatTests
+          describe "Read receipts" readReceiptsTests
           xdescribe'' "SimpleX Broadcast bot" broadcastBotTests
           xdescribe'' "SimpleX Directory service bot" directoryServiceTests
           describe "Remote session" remoteTests
