@@ -399,7 +399,9 @@ createNewSndChatItem db user chatDirection notInHistory_ SndMessage {msgId, shar
 createNewRcvChatItem :: DB.Connection -> User -> ChatDirection c 'MDRcv -> Maybe NotInHistory -> RcvMessage -> Maybe SharedMsgId -> CIContent 'MDRcv -> Maybe CITimed -> Bool -> Bool -> UTCTime -> UTCTime -> IO (ChatItemId, Maybe (CIQuote c), Maybe CIForwardedFrom)
 createNewRcvChatItem db user chatDirection notInHistory_ RcvMessage {msgId, chatMsgEvent, forwardedByMember} sharedMsgId_ ciContent timed live userMention itemTs createdAt = do
   ciId <- createNewChatItem_ db user chatDirection notInHistory_ (Just msgId) sharedMsgId_ ciContent quoteRow itemForwarded timed live userMention itemTs forwardedByMember createdAt
-  quotedItem <- mapM (getChatItemQuote_ db user chatDirection) quotedMsg
+  quotedItem <- case chatDirection of
+    CDLocalRcv _ -> pure Nothing  -- Local chats don't support quoting
+    _ -> mapM (getChatItemQuote_ db user chatDirection) quotedMsg
   pure (ciId, quotedItem, itemForwarded)
   where
     itemForwarded = cmForwardedFrom chatMsgEvent
@@ -412,6 +414,7 @@ createNewRcvChatItem db user chatDirection notInHistory_ RcvMessage {msgId, chat
           CDDirectRcv _ -> (Just $ not sent, Nothing)
           CDGroupRcv GroupInfo {membership = GroupMember {memberId = userMemberId}} _ ->
             (Just $ Just userMemberId == memberId, memberId)
+          CDLocalRcv _ -> (Nothing, Nothing)  -- Local chats don't support quoting
 
 createNewChatItemNoMsg :: forall c d. MsgDirectionI d => DB.Connection -> User -> ChatDirection c d -> CIContent d -> UTCTime -> UTCTime -> IO ChatItemId
 createNewChatItemNoMsg db user chatDirection ciContent itemTs =
