@@ -1347,6 +1347,10 @@
   <string name="receipts_groups_disable_keep_overrides">Disable (keep group overrides)</string>
   <string name="receipts_groups_enable_for_all">Enable for all groups</string>
   <string name="receipts_groups_disable_for_all">Disable for all groups</string>
+  <string name="settings_section_title_read_receipts">Read receipts</string>
+  <string name="read_receipts_section_contacts">Contacts</string>
+  <string name="read_receipts_section_description">Send read receipts when you view messages. Blue ticks will show when messages are read.</string>
+  <string name="read_receipts_section_description_1">These settings apply to your current profile and can be overridden per contact.</string>
   <string name="privacy_media_blur_radius">Blur media</string>
   <string name="privacy_media_blur_radius_off">Off</string>
   <string name="privacy_media_blur_radius_soft">Soft</string>

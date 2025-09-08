@@ -204,6 +204,21 @@ fun PrivacySettingsView(
           }
         )
       }
+
+      // Read Receipts Section
+      if (!chatModel.desktopNoUserNoRemote) {
+        SectionDividerSpaced(maxTopPadding = true)
+        ReadReceiptsSection(
+          currentUser = currentUser,
+          setSendReadReceipts = { enable ->
+            withLongRunningApi(slow = 60_000) {
+              val rrs = UserReadReceiptSettings(enable, clearOverrides = false)
+              chatModel.controller.apiSetUserReadReceipts(currentUser, rrs)
+              chatModel.currentUser.value = currentUser.copy(sendReadRcptsContacts = enable)
+            }
+          }
+        )
+      }
     }
     SectionBottomSpacer()
   }
@@ -315,6 +330,35 @@ private fun DeliveryReceiptsSection(
         }
         append(".\n")
         append(generalGetString(MR.strings.receipts_section_description_1))
+      }
+    }
+  )
+}
+
+@Composable
+private fun ReadReceiptsSection(
+  currentUser: User,
+  setSendReadReceipts: (Boolean) -> Unit,
+) {
+  SectionView(stringResource(MR.strings.settings_section_title_read_receipts)) {
+    SettingsActionItemWithContent(painterResource(MR.images.ic_double_check_blue), stringResource(MR.strings.read_receipts_section_contacts)) {
+      DefaultSwitch(
+        checked = currentUser.sendReadRcptsContacts,
+        onCheckedChange = { enable ->
+          setSendReadReceipts(enable)
+        }
+      )
+    }
+  }
+  SectionTextFooter(
+    remember(currentUser.displayName) {
+      buildAnnotatedString {
+        append(generalGetString(MR.strings.read_receipts_section_description) + " ")
+        withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
+          append(currentUser.displayName)
+        }
+        append(".\n")
+        append(generalGetString(MR.strings.read_receipts_section_description_1))
       }
     }
   )

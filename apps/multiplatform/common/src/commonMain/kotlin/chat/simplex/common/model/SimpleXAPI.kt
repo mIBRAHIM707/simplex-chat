@@ -763,6 +763,18 @@ object ChatController {
     throw Exception("failed to set receipts for user groups ${r.responseType} ${r.details}")
   }
 
+  suspend fun apiSetUserReadReceipts(u: User, userReadReceiptSettings: UserReadReceiptSettings) {
+    val r = sendCmd(u.remoteHostId, CC.ApiSetUserReadReceipts(u.userId, userReadReceiptSettings))
+    if (r.result is CR.CmdOk) return
+    throw Exception("failed to set read receipts for user ${r.responseType} ${r.details}")
+  }
+
+  suspend fun apiSetContactReadReceipts(u: User, contactId: Long, enable: Boolean) {
+    val r = sendCmd(u.remoteHostId, CC.ApiSetContactReadReceipts(u.userId, contactId, enable))
+    if (r.result is CR.CmdOk) return
+    throw Exception("failed to set read receipts for contact ${r.responseType} ${r.details}")
+  }
+
   suspend fun apiHideUser(u: User, viewPwd: String): User =
     setUserPrivacy(u.remoteHostId, CC.ApiHideUser(u.userId, viewPwd))
 
@@ -3276,6 +3288,8 @@ sealed class CC {
   class SetAllContactReceipts(val enable: Boolean): CC()
   class ApiSetUserContactReceipts(val userId: Long, val userMsgReceiptSettings: UserMsgReceiptSettings): CC()
   class ApiSetUserGroupReceipts(val userId: Long, val userMsgReceiptSettings: UserMsgReceiptSettings): CC()
+  class ApiSetUserReadReceipts(val userId: Long, val userReadReceiptSettings: UserReadReceiptSettings): CC()
+  class ApiSetContactReadReceipts(val userId: Long, val contactId: Long, val enable: Boolean): CC()
   class ApiHideUser(val userId: Long, val viewPwd: String): CC()
   class ApiUnhideUser(val userId: Long, val viewPwd: String): CC()
   class ApiMuteUser(val userId: Long): CC()
@@ -3443,6 +3457,11 @@ sealed class CC {
       val mrs = userMsgReceiptSettings
       "/_set receipts groups $userId ${onOff(mrs.enable)} clear_overrides=${onOff(mrs.clearOverrides)}"
     }
+    is ApiSetUserReadReceipts -> {
+      val rrs = userReadReceiptSettings
+      "/_set read_receipts $userId ${onOff(rrs.enableContacts)} clear_overrides=${onOff(rrs.clearOverrides)}"
+    }
+    is ApiSetContactReadReceipts -> "/_set contact read_receipts $userId $contactId ${onOff(enable)}"
     is ApiHideUser -> "/_hide user $userId ${json.encodeToString(viewPwd)}"
     is ApiUnhideUser -> "/_unhide user $userId ${json.encodeToString(viewPwd)}"
     is ApiMuteUser -> "/_mute user $userId"
@@ -4568,6 +4587,9 @@ enum class MsgFilter {
 
 @Serializable
 data class UserMsgReceiptSettings(val enable: Boolean, val clearOverrides: Boolean)
+
+@Serializable
+data class UserReadReceiptSettings(val enableContacts: Boolean, val clearOverrides: Boolean)
 
 @Serializable
 data class FullChatPreferences(
