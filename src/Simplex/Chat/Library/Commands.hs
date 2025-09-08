@@ -998,7 +998,7 @@ processChatCommand' vr = \case
   UserRead -> withUser $ \User {userId} -> processChatCommand $ APIUserRead userId
   APIChatRead chatRef@(ChatRef cType chatId) -> withUser $ \_ -> case cType of
     CTDirect -> do
-  user@User {userId = uId} <- withFastStore $ \db -> getUserByContactId db chatId
+      user@User {userId = uId} <- withFastStore $ \db -> getUserByContactId db chatId
       -- Fetch contact (needed to send read receipts)
       ct <- withFastStore $ \db -> getContact db vr user chatId
       -- Check if user has enabled sending read receipts (0/1 integer column)
@@ -1042,7 +1042,7 @@ processChatCommand' vr = \case
     CTContactConnection -> throwCmdError "not supported"
   APIChatItemsRead chatRef@(ChatRef cType chatId) itemIds -> withUser $ \_ -> case cType of
     CTDirect -> do
-  user@User {userId = uId} <- withFastStore $ \db -> getUserByContactId db chatId
+      user@User {userId = uId} <- withFastStore $ \db -> getUserByContactId db chatId
       ct <- withFastStore $ \db -> getContact db vr user chatId
       sendRR <- withFastStore' $ \db -> do
         xs <- DB.query db "SELECT send_read_rcpts_contacts FROM users WHERE user_id = ?" (Only uId) :: IO [Only Int]
