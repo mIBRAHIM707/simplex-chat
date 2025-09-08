@@ -117,6 +117,9 @@ import UnliftIO.Directory
 import qualified UnliftIO.Exception as E
 import UnliftIO.IO (hClose)
 import UnliftIO.STM
+import qualified Database.SQLite.Simple as DB
+import Database.SQLite.Simple (Only (..))
+import Database.SQLite.Simple.QQ (sql)
 #if defined(dbPostgres)
 import Data.Bifunctor (bimap, second)
 import Simplex.Messaging.Agent.Client (SubInfo (..), getAgentQueuesInfo, getAgentWorkersDetails, getAgentWorkersSummary)
@@ -996,11 +999,30 @@ processChatCommand' vr = \case
   APIChatRead chatRef@(ChatRef cType chatId) -> withUser $ \_ -> case cType of
     CTDirect -> do
       user <- withFastStore $ \db -> getUserByContactId db chatId
+      -- Fetch contact (needed to send read receipts)
+      ct <- withFastStore $ \db -> getContact db vr user chatId
+      -- Check if user has enabled sending read receipts (0/1 integer column)
+      sendRR <- withFastStore' $ \db -> do
+        xs <- DB.query db "SELECT send_read_rcpts_contacts FROM users WHERE user_id = ?" (Only $ userId user) :: IO [Only Int]
+        pure $ case xs of
+          (Only i:_) -> i /= 0
+          _ -> False
+      -- Collect shared message ids of unread direct messages BEFORE marking them read
+      unreadSharedIds <- if sendRR
+        then withFastStore' $ \db -> do
+          mids <- DB.query db
+            [sql|SELECT shared_msg_id FROM chat_items WHERE user_id = ? AND contact_id = ? AND item_status = ? AND shared_msg_id IS NOT NULL|]
+            (userId user, chatId, CISRcvNew)
+          pure [ mid | (Only (Just mid)) <- mids ]
+        else pure []
       ts <- liftIO getCurrentTime
       timedItems <- withFastStore' $ \db -> do
         timedItems <- getDirectUnreadTimedItems db user chatId
         updateDirectChatItemsRead db user chatId
         setDirectChatItemsDeleteAt db user chatId timedItems ts
+      -- Send read receipts after marking as read
+      when sendRR $ forM_ unreadSharedIds $ \sid ->
+        (void $ sendDirectContactMessage user ct (XMsgRead sid)) `catchChatError` const (pure ())
       forM_ timedItems $ \(itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
       ok user
     CTGroup -> do
@@ -1021,9 +1043,25 @@ processChatCommand' vr = \case
   APIChatItemsRead chatRef@(ChatRef cType chatId) itemIds -> withUser $ \_ -> case cType of
     CTDirect -> do
       user <- withFastStore $ \db -> getUserByContactId db chatId
+      ct <- withFastStore $ \db -> getContact db vr user chatId
+      sendRR <- withFastStore' $ \db -> do
+        xs <- DB.query db "SELECT send_read_rcpts_contacts FROM users WHERE user_id = ?" (Only $ userId user) :: IO [Only Int]
+        pure $ case xs of
+          (Only i:_) -> i /= 0
+          _ -> False
+      -- Gather shared message ids for the specific items that are currently unread
+      unreadSharedIds <- if sendRR
+  then withFastStore' $ \db -> fmap catMaybes $ forM (L.toList itemIds) $ \itId -> do
+          rs <- DB.query db
+            [sql|SELECT shared_msg_id FROM chat_items WHERE user_id = ? AND contact_id = ? AND chat_item_id = ? AND item_status = ? AND shared_msg_id IS NOT NULL|]
+            (userId user, chatId, itId, CISRcvNew)
+          pure $ listToMaybe [ mid | (Only (Just mid)) <- rs ]
+        else pure []
       timedItems <- withFastStore' $ \db -> do
         timedItems <- updateDirectChatItemsReadList db user chatId itemIds
         setDirectChatItemsDeleteAt db user chatId timedItems =<< getCurrentTime
+      when sendRR $ forM_ unreadSharedIds $ \sid ->
+        (void $ sendDirectContactMessage user ct (XMsgRead sid)) `catchChatError` const (pure ())
       forM_ timedItems $ \(itemId, deleteAt) -> startProximateTimedItemThread user (chatRef, itemId) deleteAt
       ok user
     CTGroup -> do
