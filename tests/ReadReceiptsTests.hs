@@ -9,8 +9,10 @@ import Test.Hspec hiding (it)
 -- Minimal direct chat read receipt flow test.
 -- Confirms that marking a direct chat as read returns ok after a message is received.
 readReceiptsTests :: SpecWith TestParams
-readReceiptsTests = describe "Read receipts" $ do
-  it "marks direct chat read and returns ok" testReadReceiptDirect
+readReceiptsTests = do
+  let spec = it "marks direct chat read and returns ok" testReadReceiptDirect
+  describe "Read receipts" spec
+  describe "ReadReceipts" spec
 
 testReadReceiptDirect :: TestParams -> IO ()
 testReadReceiptDirect =
