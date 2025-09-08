@@ -118,7 +118,6 @@ import UnliftIO.Directory
 import qualified UnliftIO.Exception as E
 import UnliftIO.IO (hClose)
 import UnliftIO.STM
-import qualified Database.SQLite.Simple as DB
 import Database.SQLite.Simple (Only (..))
 import Database.SQLite.Simple.QQ (sql)
 #if defined(dbPostgres)
@@ -999,12 +998,12 @@ processChatCommand' vr = \case
   UserRead -> withUser $ \User {userId} -> processChatCommand $ APIUserRead userId
   APIChatRead chatRef@(ChatRef cType chatId) -> withUser $ \_ -> case cType of
     CTDirect -> do
-      user <- withFastStore $ \db -> getUserByContactId db chatId
+  user@User {userId = uId} <- withFastStore $ \db -> getUserByContactId db chatId
       -- Fetch contact (needed to send read receipts)
       ct <- withFastStore $ \db -> getContact db vr user chatId
       -- Check if user has enabled sending read receipts (0/1 integer column)
       sendRR <- withFastStore' $ \db -> do
-        xs <- DB.query db "SELECT send_read_rcpts_contacts FROM users WHERE user_id = ?" (Only $ userId user) :: IO [Only Int]
+        xs <- DB.query db "SELECT send_read_rcpts_contacts FROM users WHERE user_id = ?" (Only uId) :: IO [Only Int]
         pure $ case xs of
           (Only i:_) -> i /= 0
           _ -> False
@@ -1013,7 +1012,7 @@ processChatCommand' vr = \case
         then withFastStore' $ \db -> do
           mids <- DB.query db
             [sql|SELECT shared_msg_id FROM chat_items WHERE user_id = ? AND contact_id = ? AND item_status = ? AND shared_msg_id IS NOT NULL|]
-            (userId user, chatId, CISRcvNew)
+            (uId, chatId, CISRcvNew)
           pure [ mid | (Only (Just mid)) <- mids ]
         else pure []
       ts <- liftIO getCurrentTime
@@ -1043,10 +1042,10 @@ processChatCommand' vr = \case
     CTContactConnection -> throwCmdError "not supported"
   APIChatItemsRead chatRef@(ChatRef cType chatId) itemIds -> withUser $ \_ -> case cType of
     CTDirect -> do
-      user <- withFastStore $ \db -> getUserByContactId db chatId
+  user@User {userId = uId} <- withFastStore $ \db -> getUserByContactId db chatId
       ct <- withFastStore $ \db -> getContact db vr user chatId
       sendRR <- withFastStore' $ \db -> do
-        xs <- DB.query db "SELECT send_read_rcpts_contacts FROM users WHERE user_id = ?" (Only $ userId user) :: IO [Only Int]
+        xs <- DB.query db "SELECT send_read_rcpts_contacts FROM users WHERE user_id = ?" (Only uId) :: IO [Only Int]
         pure $ case xs of
           (Only i:_) -> i /= 0
           _ -> False
@@ -1055,7 +1054,7 @@ processChatCommand' vr = \case
         then withFastStore' $ \db -> fmap catMaybes $ forM (L.toList itemIds) $ \itId -> do
           rs <- DB.query db
             [sql|SELECT shared_msg_id FROM chat_items WHERE user_id = ? AND contact_id = ? AND chat_item_id = ? AND item_status = ? AND shared_msg_id IS NOT NULL|]
-            (userId user, chatId, itId, CISRcvNew)
+            (uId, chatId, itId, CISRcvNew)
           pure $ listToMaybe [ mid | (Only (Just mid)) <- rs ]
         else pure []
       timedItems <- withFastStore' $ \db -> do
