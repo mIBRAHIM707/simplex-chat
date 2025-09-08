@@ -2826,7 +2826,7 @@ getAChatItemBySharedMsgId db user cd sharedMsgId = case cd of
   CDGroupRcv g GroupMember {groupMemberId} -> do
     (CChatItem msgDir ci) <- getGroupChatItemBySharedMsgId db user g groupMemberId sharedMsgId
     pure $ AChatItem SCTGroup msgDir (GroupChat g) ci
-  CDLocalRcv _ -> throwError $ SEChatItemNotFound (ChatItemId 0) -- Local chats don't support shared message IDs
+  CDLocalRcv _ -> throwError $ SEChatItemNotFound 0 -- Local chats don't support shared message IDs
 
 getChatItemVersions :: DB.Connection -> ChatItemId -> IO [ChatItemVersion]
 getChatItemVersions db itemId = do
