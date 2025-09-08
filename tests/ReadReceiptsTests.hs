@@ -1,4 +1,3 @@
-{-# LANGUAGE HasCallStack #-}
 {-# LANGUAGE OverloadedStrings #-}
 module ReadReceiptsTests (readReceiptsTests) where
 
@@ -17,7 +16,7 @@ import Test.Hspec
 -- and absence of errors. Future enhancement: query internal DB for item_status = 'snd_read'.
 readReceiptsTests :: Spec
 readReceiptsTests = describe "Read receipts" $ do
-  it "direct chat read emits receipt without error" $ \ps ->
+  it "direct chat read emits receipt without error" $ 
     testChat2 aliceProfile bobProfile $ \alice bob -> do
       -- connect users
       connectUsers alice bob
