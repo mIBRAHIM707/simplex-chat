@@ -2,7 +2,7 @@
 module ReadReceiptsTests (readReceiptsTests) where
 
 import ChatClient
-import ChatTests.Utils as CTU (connectUsers, aliceProfile, bobProfile)
+import ChatTests.Utils
 import Test.Hspec as H
 
 -- | Tests basic direct chat read receipts flow.
@@ -16,7 +16,8 @@ import Test.Hspec as H
 -- and absence of errors. Future enhancement: query internal DB for item_status = 'snd_read'.
 readReceiptsTests :: Spec
 readReceiptsTests = H.describe "Read receipts" $ do
-  H.it "direct chat read emits receipt without error" $ 
+  H.it "direct chat read emits receipt without error" $ \ps ->
+    -- testChat2 sets up 2 users and passes TestCC handles
     testChat2 aliceProfile bobProfile $ \alice bob -> do
       -- connect users
       connectUsers alice bob
