@@ -558,6 +558,33 @@ test-suite simplex-chat-test
     , unicode-transforms ==0.4.*
     , unliftio ==0.2.*
   default-language: Haskell2010
+  
+test-suite read-receipts-test
+  type: exitcode-stdio-1.0
+  main-is: ReadReceiptsMain.hs
+  other-modules:
+      ReadReceiptsTests
+      ChatClient
+      ChatTests.DBUtils
+      ChatTests.Utils
+      Paths_simplex_chat
+  hs-source-dirs: tests
+  ghc-options: -O1 -threaded -Wall -Wno-missing-import-lists
+  build-depends:
+      base >=4.7 && <5
+    , simplex-chat
+    , async ==2.2.*
+    , stm ==2.5.*
+    , time ==1.12.*
+    , hspec ==2.11.*
+    , directory ==1.3.*
+    , process ==1.6.*
+    , text >=2.0.1 && <2.2
+  if impl(ghc >= 9.6.2)
+    build-depends: bytestring ==0.11.*
+  else
+    build-depends: bytestring ==0.10.*
+  default-language: Haskell2010
   if flag(client_postgres)
     build-depends:
         postgresql-simple ==0.7.*
