@@ -2,8 +2,8 @@
 module ReadReceiptsTests (readReceiptsTests) where
 
 import ChatClient
-import ChatTests.Utils
-import Test.Hspec
+import ChatTests.Utils as CTU (connectUsers, aliceProfile, bobProfile)
+import Test.Hspec as H
 
 -- | Tests basic direct chat read receipts flow.
 -- Scenario:
@@ -15,8 +15,8 @@ import Test.Hspec
 -- We cannot easily introspect internal status text without extending test harness, so we focus on command 'ok' response
 -- and absence of errors. Future enhancement: query internal DB for item_status = 'snd_read'.
 readReceiptsTests :: Spec
-readReceiptsTests = describe "Read receipts" $ do
-  it "direct chat read emits receipt without error" $ 
+readReceiptsTests = H.describe "Read receipts" $ do
+  H.it "direct chat read emits receipt without error" $ 
     testChat2 aliceProfile bobProfile $ \alice bob -> do
       -- connect users
       connectUsers alice bob

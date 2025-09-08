@@ -497,6 +497,7 @@ test-suite simplex-chat-test
       OperatorTests
       ProtocolTests
       RandomServers
+  ReadReceiptsTests
       RemoteTests
       ValidNames
       ViewTests
