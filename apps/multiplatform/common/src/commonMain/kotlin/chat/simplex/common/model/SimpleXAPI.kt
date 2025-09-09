@@ -3644,6 +3644,8 @@ sealed class CC {
     is SetAllContactReceipts -> "setAllContactReceipts"
     is ApiSetUserContactReceipts -> "apiSetUserContactReceipts"
     is ApiSetUserGroupReceipts -> "apiSetUserGroupReceipts"
+    is ApiSetUserReadReceipts -> "apiSetUserReadReceipts"
+    is ApiSetContactReadReceipts -> "apiSetContactReadReceipts"
     is ApiHideUser -> "apiHideUser"
     is ApiUnhideUser -> "apiUnhideUser"
     is ApiMuteUser -> "apiMuteUser"
