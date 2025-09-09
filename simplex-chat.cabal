@@ -59,7 +59,7 @@ library
       Simplex.Chat.Options
       Simplex.Chat.Options.DB
       Simplex.Chat.ProfileGenerator
-  Simplex.Chat.ReadReceipts
+      Simplex.Chat.ReadReceipts
       Simplex.Chat.Protocol
       Simplex.Chat.Remote
       Simplex.Chat.Remote.AppVersion
@@ -498,7 +498,6 @@ test-suite simplex-chat-test
       OperatorTests
       ProtocolTests
       RandomServers
-  ReadReceiptsTests
       RemoteTests
       ValidNames
       ViewTests
