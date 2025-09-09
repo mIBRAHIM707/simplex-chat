@@ -388,8 +388,7 @@ processChatCommand' vr = \case
   APISetContactReadReceipts userId' contactId settings -> withUser $ \user -> do
     user' <- privateGetUser userId'
     validateUserPassword user user' Nothing
-    -- TODO: implement contact-specific read receipt settings
-    -- For now, just return success as a placeholder
+    withFastStore' $ \db -> updateContactReadReceipts db user' contactId settings
     ok user
   SetContactReadReceipts contactName settings -> 
     withUser $ \User {userId} -> 
@@ -3933,6 +3932,10 @@ chatCommandP =
       "/set receipts contacts " *> (SetUserContactReceipts <$> receiptSettings),
       "/_set receipts groups " *> (APISetUserGroupReceipts <$> A.decimal <* A.space <*> receiptSettings),
       "/set receipts groups " *> (SetUserGroupReceipts <$> receiptSettings),
+      "/_set read_receipts " *> (APISetUserReadReceipts <$> A.decimal <* A.space <*> readReceiptSettingsP),
+      "/set read_receipts " *> (SetUserReadReceipts <$> readReceiptSettingsP),
+      "/_set contact read_receipts " *> (APISetContactReadReceipts <$> A.decimal <* A.space <*> A.decimal <* A.space <*> onOffP),
+      "/set read_receipts @" *> (SetContactReadReceipts <$> displayNameP <* A.space <*> onOffP),
       "/_hide user " *> (APIHideUser <$> A.decimal <* A.space <*> jsonP),
       "/_unhide user " *> (APIUnhideUser <$> A.decimal <* A.space <*> jsonP),
       "/_mute user " *> (APIMuteUser <$> A.decimal),
@@ -4328,6 +4331,10 @@ chatCommandP =
       enable <- onOffP
       clearOverrides <- (" clear_overrides=" *> onOffP) <|> pure False
       pure UserMsgReceiptSettings {enable, clearOverrides}
+    readReceiptSettingsP = do
+      enableContacts <- onOffP
+      clearOverrides <- (" clear_overrides=" *> onOffP) <|> pure False
+      pure UserReadReceiptSettings {enableContacts, clearOverrides}
     onOffP = ("on" $> True) <|> ("off" $> False)
     profileNames = (,) <$> displayNameP <*> fullNameP
     newUserP = do

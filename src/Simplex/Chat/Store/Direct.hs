@@ -73,6 +73,7 @@ module Simplex.Chat.Store.Direct
     updateConnectionStatus,
     updateConnectionStatusFromTo,
     updateContactSettings,
+    updateContactReadReceipts,
     setConnConnReqInv,
     resetContactConnInitiated,
     setContactCustomData,
@@ -995,6 +996,10 @@ updateConnectionStatus_ db connId connStatus = do
 updateContactSettings :: DB.Connection -> User -> Int64 -> ChatSettings -> IO ()
 updateContactSettings db User {userId} contactId ChatSettings {enableNtfs, sendRcpts, favorite} =
   DB.execute db "UPDATE contacts SET enable_ntfs = ?, send_rcpts = ?, favorite = ? WHERE user_id = ? AND contact_id = ?" (enableNtfs, BI <$> sendRcpts, BI favorite, userId, contactId)
+
+updateContactReadReceipts :: DB.Connection -> User -> Int64 -> Bool -> IO ()
+updateContactReadReceipts db User {userId} contactId enabled =
+  DB.execute db "UPDATE contacts SET send_read_rcpts = ? WHERE user_id = ? AND contact_id = ?" (BI enabled, userId, contactId)
 
 setConnConnReqInv :: DB.Connection -> User -> Int64 -> ConnReqInvitation -> IO ()
 setConnConnReqInv db User {userId} connId connReq = do
